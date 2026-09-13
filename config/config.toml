@@ -1,7 +1,7 @@
 # The binary embeds these defaults at compile time.
 # Copy this file to $XDG_CONFIG_HOME/mekle/config.toml to customize it.
 
-search_dirs = [ "." ]
+search_dirs = ["."]
 depth = 5
 verbose = false
 

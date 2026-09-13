@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none">
+  <title>mekle terminal icon</title>
+  <rect x="6" y="14" width="116" height="108" rx="16" fill="#f0f6fc" stroke="#0d1117" stroke-width="2"/>
+  <rect x="6" y="6" width="116" height="108" rx="16" fill="#f0f6fc" stroke="#0d1117" stroke-width="2"/>
+  <path d="m23 25 6 5-6 5m10 1h6" stroke="#0d1117" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39 88V58m0 8c0-12 25-12 25 0v22m0-22c0-12 25-12 25 0v22" stroke="#0d1117" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
