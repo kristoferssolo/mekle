@@ -132,30 +132,7 @@ impl ProjectFinder {
                 .insert(marker);
         }
 
-        let mut projects_by_identity = HashMap::<PathBuf, (PathBuf, BTreeSet<String>)>::new();
-        for (path, markers) in projects {
-            let identity = paths::normalize(&path)?;
-            let Some((display_path, existing_markers)) = projects_by_identity.get_mut(&identity)
-            else {
-                projects_by_identity.insert(identity, (path, markers));
-                continue;
-            };
-
-            if prefer_display_path(&path, display_path) {
-                *display_path = path;
-            }
-            existing_markers.extend(markers);
-        }
-
-        let mut projects = projects_by_identity
-            .into_iter()
-            .map(|(identity, (path, markers))| {
-                Project::with_identity(path, identity, markers.into_iter().collect())
-            })
-            .collect::<Vec<_>>();
-        projects.sort_unstable_by(|left, right| left.path.cmp(&right.path));
-
-        Ok(projects)
+        merge_projects_by_identity(projects)
     }
 
     fn scan(&self) -> Result<DirectoryScan> {
@@ -191,15 +168,40 @@ impl ProjectFinder {
     }
 }
 
-/// Prefers a spelling under the user's home directory, then a stable path order.
-fn prefer_display_path(candidate: &Path, current: &Path) -> bool {
+fn merge_projects_by_identity(
+    projects: HashMap<PathBuf, BTreeSet<String>>,
+) -> Result<Vec<Project>> {
     let home = paths::home();
-    let candidate_is_home = home
-        .as_deref()
-        .is_some_and(|home| candidate.starts_with(home));
-    let current_is_home = home
-        .as_deref()
-        .is_some_and(|home| current.starts_with(home));
+    let mut projects_by_identity = HashMap::<PathBuf, (PathBuf, BTreeSet<String>)>::new();
+
+    for (path, markers) in projects {
+        let identity = paths::normalize(&path)?;
+        let Some((display_path, existing_markers)) = projects_by_identity.get_mut(&identity) else {
+            projects_by_identity.insert(identity, (path, markers));
+            continue;
+        };
+
+        if prefer_display_path(&path, display_path, home.as_deref()) {
+            *display_path = path;
+        }
+        existing_markers.extend(markers);
+    }
+
+    let mut projects = projects_by_identity
+        .into_iter()
+        .map(|(identity, (path, markers))| {
+            Project::with_identity(path, identity, markers.into_iter().collect())
+        })
+        .collect::<Vec<_>>();
+    projects.sort_unstable_by(|left, right| left.path.cmp(&right.path));
+
+    Ok(projects)
+}
+
+/// Prefers a spelling under the user's home directory, then a stable path order.
+fn prefer_display_path(candidate: &Path, current: &Path, home: Option<&Path>) -> bool {
+    let candidate_is_home = home.is_some_and(|home| candidate.starts_with(home));
+    let current_is_home = home.is_some_and(|home| current.starts_with(home));
 
     (candidate_is_home && !current_is_home)
         || (candidate_is_home == current_is_home && candidate < current)
