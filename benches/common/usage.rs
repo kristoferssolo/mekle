@@ -98,9 +98,12 @@ pub fn untracked_projects(count: usize) -> Vec<Project> {
 
 fn build(count: usize, path: fn(usize) -> PathBuf) -> Vec<Project> {
     (0..count)
-        .map(|index| Project {
-            path: path(index),
-            markers: vec![".git".to_owned(), "Cargo.toml".to_owned()],
+        .map(|index| {
+            Project::new(
+                path(index),
+                vec![".git".to_owned(), "Cargo.toml".to_owned()],
+            )
+            .expect("benchmark paths can be normalized")
         })
         .collect()
 }

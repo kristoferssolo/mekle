@@ -5,7 +5,7 @@ use common::{file, repository, worktree};
 use std::{
     ffi::{OsStr, OsString},
     fs::{create_dir_all, remove_dir, write},
-    os::unix::ffi::OsStrExt,
+    os::unix::{ffi::OsStrExt, fs::symlink},
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -164,6 +164,71 @@ fn recorded_projects_are_ranked_before_untracked_projects() -> Result<()> {
         .projects()?;
 
     assert_eq!(projects, ["~/beta"]);
+    Ok(())
+}
+
+#[test]
+fn a_symlinked_search_root_matches_history_recorded_at_the_canonical_path() -> Result<()> {
+    let temp = TempDir::new()?;
+    let home = temp.path().join("home");
+    let canonical_root = temp.path().join("archive/repos");
+    let canonical_project = canonical_root.join("project");
+    create_dir_all(&home)?;
+    file(
+        &canonical_project.join("Cargo.toml"),
+        "[package]\nname = \"project\"\n",
+    )?;
+    symlink(&canonical_root, home.join("repos"))?;
+
+    let run = Run::new()?
+        .home(&home)
+        .config("search_dirs = [\"~/repos\"]\n")?;
+    let run = run.clear_args().arg("add").arg(&canonical_project);
+    run.stdout()?;
+
+    let record = serde_json::from_str::<serde_json::Value>(
+        run.clear_args()
+            .arg("--json")
+            .arg("~/repos")
+            .stdout()?
+            .trim(),
+    )?;
+
+    assert_eq!(record["path"].as_str(), home.join("repos/project").to_str());
+    assert_eq!(record["score"], 1.0);
+    assert!(record["frecency"].as_f64().is_some_and(|score| score > 0.0));
+    Ok(())
+}
+
+#[test]
+fn a_pinned_project_discovered_through_a_symlink_remains_pinned() -> Result<()> {
+    let temp = TempDir::new()?;
+    let home = temp.path().join("home");
+    let canonical_root = temp.path().join("archive/repos");
+    let canonical_project = canonical_root.join("project");
+    create_dir_all(&home)?;
+    file(
+        &canonical_project.join("Cargo.toml"),
+        "[package]\nname = \"project\"\n",
+    )?;
+    symlink(&canonical_root, home.join("repos"))?;
+
+    let run = Run::new()?
+        .home(&home)
+        .config("search_dirs = [\"~/repos\"]\n")?;
+    let run = run.clear_args().arg("pin").arg(&canonical_project);
+    run.stdout()?;
+
+    let record = serde_json::from_str::<serde_json::Value>(
+        run.clear_args()
+            .arg("--json")
+            .arg("~/repos")
+            .stdout()?
+            .trim(),
+    )?;
+
+    assert_eq!(record["path"].as_str(), home.join("repos/project").to_str());
+    assert_eq!(record["pinned"], true);
     Ok(())
 }
 

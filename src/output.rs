@@ -41,17 +41,14 @@ pub struct ProjectResult {
 pub fn include_pinned(projects: &mut Vec<Project>, history: &[HistoryEntry]) -> Result<()> {
     let discovered = projects
         .iter()
-        .map(|project| project.path.as_path())
+        .map(Project::identity)
         .collect::<HashSet<_>>();
 
     let missing = history
         .iter()
         .filter(|entry| entry.pinned && !discovered.contains(entry.path.as_path()))
         .filter_map(|entry| match fs::is_dir(&entry.path) {
-            Ok(true) => Some(Ok(Project {
-                path: entry.path.clone(),
-                markers: Vec::new(),
-            })),
+            Ok(true) => Some(Project::new(entry.path.clone(), Vec::new())),
             Ok(false) => None,
             Err(error) => Some(Err(error)),
         })
@@ -79,8 +76,8 @@ pub fn rank_projects(mut projects: Vec<Project>, history: &[HistoryEntry]) -> Ve
     };
 
     projects.sort_unstable_by(|left, right| {
-        let (left_pinned, left_frecency) = standing_of(&left.path);
-        let (right_pinned, right_frecency) = standing_of(&right.path);
+        let (left_pinned, left_frecency) = standing_of(left.identity());
+        let (right_pinned, right_frecency) = standing_of(right.identity());
         right_pinned
             .cmp(&left_pinned)
             .then_with(|| right_frecency.total_cmp(&left_frecency))
@@ -90,7 +87,7 @@ pub fn rank_projects(mut projects: Vec<Project>, history: &[HistoryEntry]) -> Ve
     projects
         .into_iter()
         .map(|project| {
-            let entry = history_by_path.get(project.path.as_path());
+            let entry = history_by_path.get(project.identity());
             ProjectResult {
                 path: project.path,
                 score: entry.map_or(0.0, |entry| entry.score),
@@ -204,9 +201,9 @@ mod tests {
     #[test]
     fn untracked_projects_rank_below_tracked_ones() {
         let projects = ["/untracked", "/tracked"]
-            .map(|path| Project {
-                path: PathBuf::from(path),
-                markers: vec![".git".to_owned()],
+            .map(|path| {
+                Project::new(PathBuf::from(path), vec![".git".to_owned()])
+                    .expect("absolute paths can be normalized")
             })
             .to_vec();
         let history = [entry("/tracked", 12.0, false)];
@@ -222,9 +219,9 @@ mod tests {
     #[test]
     fn pinned_projects_rank_above_more_frecent_ones() {
         let projects = ["/frecent", "/pinned"]
-            .map(|path| Project {
-                path: PathBuf::from(path),
-                markers: vec![".git".to_owned()],
+            .map(|path| {
+                Project::new(PathBuf::from(path), vec![".git".to_owned()])
+                    .expect("absolute paths can be normalized")
             })
             .to_vec();
         let history = [entry("/frecent", 40.0, false), entry("/pinned", 1.0, true)];
@@ -244,10 +241,10 @@ mod tests {
         let temp = TempDir::new().expect("create temp dir");
         let outside = temp.path().join("outside");
         create_dir(&outside).expect("create the pinned directory");
-        let mut projects = vec![Project {
-            path: temp.path().join("found"),
-            markers: vec![".git".to_owned()],
-        }];
+        let mut projects = vec![Project::new(
+            temp.path().join("found"),
+            vec![".git".to_owned()],
+        )?];
         let history = [
             // Already discovered, so it keeps the markers discovery gave it.
             pinned_entry(&temp.path().join("found")),

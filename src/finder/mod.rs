@@ -7,6 +7,7 @@ use crate::{
     config::Config,
     error::{Error, Result},
     git::GIT_DIR,
+    paths,
     scan::{DirectoryScan, scan_directories},
 };
 use std::{
@@ -21,6 +22,35 @@ use tracing::info;
 pub struct Project {
     pub path: PathBuf,
     pub markers: Vec<String>,
+    identity: PathBuf,
+}
+
+impl Project {
+    /// Creates a project with a display path and its normalized filesystem identity.
+    ///
+    /// The display path keeps the spelling discovery found, while the identity
+    /// joins paths that reach the same filesystem location through symlinks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path cannot be normalized.
+    pub fn new(path: PathBuf, markers: Vec<String>) -> Result<Self> {
+        let identity = paths::normalize(&path)?;
+        Ok(Self::with_identity(path, identity, markers))
+    }
+
+    const fn with_identity(path: PathBuf, identity: PathBuf, markers: Vec<String>) -> Self {
+        Self {
+            path,
+            markers,
+            identity,
+        }
+    }
+
+    #[must_use]
+    pub fn identity(&self) -> &Path {
+        &self.identity
+    }
 }
 
 /// The ancestors that could absorb `candidate` into a project of their own.
@@ -102,11 +132,25 @@ impl ProjectFinder {
                 .insert(marker);
         }
 
-        let mut projects = projects
+        let mut projects_by_identity = HashMap::<PathBuf, (PathBuf, BTreeSet<String>)>::new();
+        for (path, markers) in projects {
+            let identity = paths::normalize(&path)?;
+            let Some((display_path, existing_markers)) = projects_by_identity.get_mut(&identity)
+            else {
+                projects_by_identity.insert(identity, (path, markers));
+                continue;
+            };
+
+            if prefer_display_path(&path, display_path) {
+                *display_path = path;
+            }
+            existing_markers.extend(markers);
+        }
+
+        let mut projects = projects_by_identity
             .into_iter()
-            .map(|(path, markers)| Project {
-                path,
-                markers: markers.into_iter().collect(),
+            .map(|(identity, (path, markers))| {
+                Project::with_identity(path, identity, markers.into_iter().collect())
             })
             .collect::<Vec<_>>();
         projects.sort_unstable_by(|left, right| left.path.cmp(&right.path));
@@ -145,6 +189,20 @@ impl ProjectFinder {
             })
             .collect()
     }
+}
+
+/// Prefers a spelling under the user's home directory, then a stable path order.
+fn prefer_display_path(candidate: &Path, current: &Path) -> bool {
+    let home = paths::home();
+    let candidate_is_home = home
+        .as_deref()
+        .is_some_and(|home| candidate.starts_with(home));
+    let current_is_home = home
+        .as_deref()
+        .is_some_and(|home| current.starts_with(home));
+
+    (candidate_is_home && !current_is_home)
+        || (candidate_is_home == current_is_home && candidate < current)
 }
 
 #[cfg(test)]

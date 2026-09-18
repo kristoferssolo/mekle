@@ -205,14 +205,19 @@ fn build_files_resolve_to_the_outermost_one() -> Result<()> {
 }
 
 #[test]
-fn symlinked_directories_are_followed() -> Result<()> {
+fn real_and_symlinked_search_roots_are_deduplicated() -> Result<()> {
     let temp = TempDir::new()?;
-    repository(&temp.path().join("actual/checkout"))?;
-    symlink("actual", temp.path().join("linked"))?;
+    let actual = temp.path().join("actual");
+    let linked = temp.path().join("linked");
+    repository(&actual.join("checkout"))?;
+    symlink(&actual, &linked)?;
+
+    let mut config = config_for(&actual)?;
+    config.paths = vec![actual.clone(), linked];
 
     assert_eq!(
-        projects_in(temp.path())?,
-        expect(&["actual/checkout", "linked/checkout"])
+        ProjectFinder::new(config).find_projects()?,
+        vec![actual.join("checkout")]
     );
     Ok(())
 }
