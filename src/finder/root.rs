@@ -87,10 +87,11 @@ impl RootResolver {
     ///
     /// Panics if a cache lock is poisoned.
     pub fn resolve_directory(&self, dir: &Path) -> Result<PathBuf> {
+        let absolute_dir = absolute_path(dir)?;
         let mut projects = HashSet::new();
         let mut candidates = BTreeSet::new();
 
-        for ancestor in dir.ancestors() {
+        for ancestor in absolute_dir.ancestors() {
             if is_git_repo(ancestor)? {
                 projects.insert(ancestor.to_path_buf());
             }
@@ -108,11 +109,13 @@ impl RootResolver {
             }
         }
 
-        Ok(projects
+        let root = projects
             .into_iter()
-            .filter(|candidate| dir.starts_with(candidate))
+            .filter(|candidate| absolute_dir.starts_with(candidate))
             .max_by_key(|candidate| candidate.components().count())
-            .unwrap_or_else(|| dir.to_path_buf()))
+            .unwrap_or(absolute_dir);
+
+        display_resolved_root(dir, root)
     }
 
     /// Resolves a marker's project root.
@@ -134,13 +137,13 @@ impl RootResolver {
 
         let root = match &cache_key.1 {
             MarkerType::PackageJson | MarkerType::DenoJson => {
-                ascend_to_root(dir, |parent| self.is_workspace_root(parent))?
+                ascend_to_root(&cache_key.0, |parent| self.is_workspace_root(parent))?
             }
             MarkerType::CargoToml => {
-                ascend_to_root(dir, |parent| self.is_cargo_workspace_root(parent))?
+                ascend_to_root(&cache_key.0, |parent| self.is_cargo_workspace_root(parent))?
             }
-            MarkerType::BuildFile(name) => ascend_to_highest_build_file(dir, name)?,
-            MarkerType::OtherConfig => ascend_to_root(dir, |_| Ok(false))?,
+            MarkerType::BuildFile(name) => ascend_to_highest_build_file(&cache_key.0, name)?,
+            MarkerType::OtherConfig => ascend_to_root(&cache_key.0, |_| Ok(false))?,
         };
 
         self.root_cache
