@@ -269,6 +269,10 @@ fn ascend_to_root<F>(dir: &Path, is_root: F) -> Result<PathBuf>
 where
     F: Fn(&Path) -> Result<bool>,
 {
+    if is_git_repo(dir)? {
+        return Ok(dir.to_path_buf());
+    }
+
     for parent in ancestors_above(dir) {
         if is_git_repo(parent)? || is_root(parent)? {
             return Ok(parent.to_path_buf());
@@ -279,6 +283,10 @@ where
 }
 
 fn ascend_to_highest_build_file(dir: &Path, build_file: &str) -> Result<PathBuf> {
+    if is_git_repo(dir)? {
+        return Ok(dir.to_path_buf());
+    }
+
     let mut highest = dir;
 
     for parent in ancestors_above(dir) {
