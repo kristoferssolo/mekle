@@ -114,6 +114,54 @@ fn sample_tree() -> Result<TempDir> {
     Ok(temp)
 }
 
+#[test]
+fn searching_from_a_plain_project_root_keeps_the_current_directory_path() -> Result<()> {
+    let temp = TempDir::new()?;
+    file(
+        &temp.path().join("Cargo.toml"),
+        "[package]\nname = \"plain\"\nversion = \"0.1.0\"\n",
+    )?;
+
+    let projects = Run::new()?.current_dir(temp.path()).arg(".").projects()?;
+
+    assert_eq!(projects, ["."]);
+    Ok(())
+}
+
+#[test]
+fn searching_a_relative_project_path_keeps_it_relative_to_the_current_directory() -> Result<()> {
+    let temp = TempDir::new()?;
+    file(
+        &temp.path().join("plain/Cargo.toml"),
+        "[package]\nname = \"plain\"\nversion = \"0.1.0\"\n",
+    )?;
+
+    let projects = Run::new()?
+        .current_dir(temp.path())
+        .arg("plain")
+        .projects()?;
+
+    assert_eq!(projects, ["plain"]);
+    Ok(())
+}
+
+#[test]
+fn searching_a_nested_repository_with_dot_reports_only_that_repository() -> Result<()> {
+    let temp = TempDir::new()?;
+    repository(&temp.path().join("outer"))?;
+    let nested = temp.path().join("outer/nested");
+    repository(&nested)?;
+    file(
+        &nested.join("Cargo.toml"),
+        "[package]\nname = \"nested\"\nversion = \"0.1.0\"\n",
+    )?;
+
+    let projects = Run::new()?.current_dir(&nested).arg(".").projects()?;
+
+    assert_eq!(projects, ["."]);
+    Ok(())
+}
+
 fn joined(root: &Path, names: &[&str]) -> Vec<String> {
     names
         .iter()
