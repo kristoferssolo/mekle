@@ -49,6 +49,7 @@ pub struct RootResolver {
     marker_files: Box<[String]>,
     workspace_files: Box<[String]>,
     workspace_cache: RwLock<HashMap<PathBuf, bool>>,
+    cargo_workspace_cache: RwLock<HashMap<PathBuf, bool>>,
     root_cache: RwLock<HashMap<(PathBuf, MarkerType), PathBuf>>,
 }
 
@@ -59,6 +60,7 @@ impl RootResolver {
             marker_files: Box::default(),
             workspace_files: workspace_files.into(),
             workspace_cache: RwLock::default(),
+            cargo_workspace_cache: RwLock::default(),
             root_cache: RwLock::default(),
         }
     }
@@ -69,6 +71,7 @@ impl RootResolver {
             marker_files: config.marker_files.clone().into(),
             workspace_files: config.workspace_files.clone().into(),
             workspace_cache: RwLock::default(),
+            cargo_workspace_cache: RwLock::default(),
             root_cache: RwLock::default(),
         }
     }
@@ -133,9 +136,9 @@ impl RootResolver {
             MarkerType::PackageJson | MarkerType::DenoJson => {
                 ascend_to_root(dir, |parent| self.is_workspace_root(parent))?
             }
-            MarkerType::CargoToml => ascend_to_root(dir, |parent| {
-                CARGO_WORKSPACE.matches_file(&parent.join("Cargo.toml"))
-            })?,
+            MarkerType::CargoToml => {
+                ascend_to_root(dir, |parent| self.is_cargo_workspace_root(parent))?
+            }
             MarkerType::BuildFile(name) => ascend_to_highest_build_file(dir, name)?,
             MarkerType::OtherConfig => ascend_to_root(dir, |_| Ok(false))?,
         };
@@ -156,6 +159,21 @@ impl RootResolver {
         let is_root = self.declares_a_workspace(dir)?;
 
         self.workspace_cache
+            .write()
+            .expect(POISONED)
+            .insert(dir.to_path_buf(), is_root);
+
+        Ok(is_root)
+    }
+
+    fn is_cargo_workspace_root(&self, dir: &Path) -> Result<bool> {
+        if let Some(&cached) = self.cargo_workspace_cache.read().expect(POISONED).get(dir) {
+            return Ok(cached);
+        }
+
+        let is_root = CARGO_WORKSPACE.matches_file(&dir.join("Cargo.toml"))?;
+
+        self.cargo_workspace_cache
             .write()
             .expect(POISONED)
             .insert(dir.to_path_buf(), is_root);
@@ -229,12 +247,11 @@ fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
 /// Keeps relative inputs relative in discovery output, including roots above
 /// the current directory.
 fn relative_to_current_dir(path: &Path) -> Result<PathBuf> {
-    let current_dir = std::env::current_dir().map_err(|source| {
-        crate::error::Error::ResolvePath {
+    let current_dir =
+        std::env::current_dir().map_err(|source| crate::error::Error::ResolvePath {
             path: path.to_path_buf(),
             source,
-        }
-    })?;
+        })?;
     let current_components = current_dir.components().collect::<Vec<_>>();
     let path_components = path.components().collect::<Vec<_>>();
     let shared = current_components
