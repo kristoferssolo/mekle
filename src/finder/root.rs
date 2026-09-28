@@ -122,10 +122,11 @@ impl RootResolver {
     ///
     /// Panics if a cache lock is poisoned.
     pub fn resolve(&self, dir: &Path, marker_name: &str) -> Result<PathBuf> {
-        let cache_key = (dir.to_path_buf(), MarkerType::from(marker_name));
+        let absolute_dir = absolute_path(dir)?;
+        let cache_key = (absolute_dir, MarkerType::from(marker_name));
 
         if let Some(root) = self.root_cache.read().expect(POISONED).get(&cache_key) {
-            return Ok(root.clone());
+            return display_resolved_root(dir, root.clone());
         }
 
         let root = match &cache_key.1 {
@@ -144,7 +145,7 @@ impl RootResolver {
             .expect(POISONED)
             .insert(cache_key, root.clone());
 
-        Ok(root)
+        display_resolved_root(dir, root)
     }
 
     fn is_workspace_root(&self, dir: &Path) -> Result<bool> {
@@ -208,6 +209,55 @@ fn ancestors_above(dir: &Path) -> impl Iterator<Item = &Path> {
     dir.ancestors()
         .skip(1)
         .take_while(|ancestor| !ancestor.as_os_str().is_empty())
+}
+
+fn absolute_path(path: &Path) -> Result<PathBuf> {
+    std::path::absolute(path).map_err(|source| crate::error::Error::ResolvePath {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
+    if input.is_absolute() {
+        Ok(root)
+    } else {
+        relative_to_current_dir(&root)
+    }
+}
+
+/// Keeps relative inputs relative in discovery output, including roots above
+/// the current directory.
+fn relative_to_current_dir(path: &Path) -> Result<PathBuf> {
+    let current_dir = std::env::current_dir().map_err(|source| {
+        crate::error::Error::ResolvePath {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    let current_components = current_dir.components().collect::<Vec<_>>();
+    let path_components = path.components().collect::<Vec<_>>();
+    let shared = current_components
+        .iter()
+        .zip(&path_components)
+        .take_while(|(left, right)| left == right)
+        .count();
+
+    let mut relative = PathBuf::new();
+    for component in &current_components[shared..] {
+        if matches!(component, std::path::Component::Normal(_)) {
+            relative.push("..");
+        }
+    }
+    for component in &path_components[shared..] {
+        relative.push(component.as_os_str());
+    }
+
+    if relative.as_os_str().is_empty() {
+        relative.push(".");
+    }
+
+    Ok(relative)
 }
 
 /// Reports whether `dir` is the root of a repository, worktree, or submodule.
