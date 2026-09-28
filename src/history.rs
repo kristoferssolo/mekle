@@ -14,6 +14,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsString,
+    fs::{OpenOptions, create_dir_all},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -122,8 +124,7 @@ impl History {
     ///
     /// Returns an error when the clock is invalid or the history cannot be written.
     pub fn record(&mut self, path: &Path) -> Result<()> {
-        self.record_at(path, SystemTime::now())?;
-        self.save()
+        self.transact(|history| history.record_at(path, SystemTime::now()))
     }
 
     /// Returns recorded projects ordered by descending frecency.
@@ -157,15 +158,17 @@ impl History {
     ///
     /// Returns an error for invalid scores, missing entries, invalid clocks, or writes.
     pub fn update(&mut self, path: &Path, change: ScoreChange) -> Result<()> {
-        match change {
-            ScoreChange::Set(score) => self.set_score(path, score)?,
-            ScoreChange::Adjust(delta) => self.adjust_score(path, delta)?,
-            ScoreChange::Remove => {
-                self.projects.remove(self.position_of(path)?);
+        self.transact(|history| {
+            match change {
+                ScoreChange::Set(score) => history.set_score(path, score)?,
+                ScoreChange::Adjust(delta) => history.adjust_score(path, delta)?,
+                ScoreChange::Remove => {
+                    history.projects.remove(history.position_of(path)?);
+                }
             }
-        }
-        self.age();
-        self.save()
+            history.age();
+            Ok(())
+        })
     }
 
     /// Pins a project so it ranks above every unpinned one, recording it first
@@ -175,7 +178,7 @@ impl History {
     ///
     /// Returns an error when the clock is invalid or the history cannot be written.
     pub fn pin(&mut self, path: &Path) -> Result<()> {
-        self.set_pinned(path, true)
+        self.transact(|history| history.set_pinned(path, true))
     }
 
     /// Unpins a project, leaving its score and its last visit alone.
@@ -184,7 +187,7 @@ impl History {
     ///
     /// Returns an error when the project is not in history, or it cannot be written.
     pub fn unpin(&mut self, path: &Path) -> Result<()> {
-        self.set_pinned(path, false)
+        self.transact(|history| history.set_pinned(path, false))
     }
 
     /// Removes every entry and persists the empty history.
@@ -193,8 +196,10 @@ impl History {
     ///
     /// Returns an error when the history cannot be written.
     pub fn clear(&mut self) -> Result<()> {
-        self.projects.clear();
-        self.save()
+        self.transact(|history| {
+            history.projects.clear();
+            Ok(())
+        })
     }
 
     /// Removes entries whose project paths no longer exist and persists the history.
@@ -203,6 +208,10 @@ impl History {
     ///
     /// Returns an error when a path cannot be checked or the history cannot be written.
     pub fn prune(&mut self) -> Result<()> {
+        self.transact(Self::prune_entries)
+    }
+
+    fn prune_entries(&mut self) -> Result<()> {
         // Collected up front so a failed check leaves the history untouched.
         let existing = self
             .projects
@@ -216,7 +225,7 @@ impl History {
             .zip(existing)
             .filter_map(|(project, exists)| exists.then_some(project))
             .collect();
-        self.save()
+        Ok(())
     }
 
     /// A project only reaches history by being pinned when it has never been
@@ -230,7 +239,7 @@ impl History {
                 ..ProjectUsage::new(path, MINIMUM_SCORE, unix_timestamp(SystemTime::now())?)
             }),
         }
-        self.save()
+        Ok(())
     }
 
     fn position_of(&self, path: &Path) -> Result<usize> {
@@ -316,6 +325,38 @@ impl History {
 
         fs::write_atomic(&self.path, &contents)
     }
+
+    /// Reloads and changes history while holding the stable sidecar lock.
+    fn transact(&mut self, change: impl FnOnce(&mut Self) -> Result<()>) -> Result<()> {
+        let parent = self
+            .path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        create_dir_all(parent).map_err(|source| Error::write_file(parent, source))?;
+
+        let lock_path = lock_path(&self.path);
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|source| Error::write_file(&lock_path, source))?;
+        lock.lock()
+            .map_err(|source| Error::write_file(&lock_path, source))?;
+
+        let mut current = Self::open(&self.path)?;
+        change(&mut current)?;
+        current.save()?;
+        self.projects = current.projects;
+        Ok(())
+    }
+}
+
+fn lock_path(path: &Path) -> PathBuf {
+    let mut lock_path = OsString::from(path.as_os_str());
+    lock_path.push(".lock");
+    PathBuf::from(lock_path)
 }
 
 impl ProjectUsage {
@@ -489,6 +530,7 @@ mod tests {
         history
             .projects
             .push(usage("/project", 2.0, Duration::ZERO));
+        history.save()?;
 
         history.update(Path::new("/project"), ScoreChange::Adjust(-1.5))?;
 
@@ -576,11 +618,39 @@ mod tests {
         history
             .projects
             .push(usage("/definitely/not/here", 1.0, Duration::ZERO));
+        history.save()?;
 
         history.prune()?;
 
         assert_eq!(history.projects.len(), 1);
         assert_eq!(history.projects[0].path, present);
+        Ok(())
+    }
+
+    #[test]
+    fn concurrent_records_preserve_every_project() -> Result<()> {
+        let temp = TempDir::new().expect("create temp dir");
+        let database = temp.path().join("history.toml");
+
+        std::thread::scope(|scope| {
+            let writers = (0..100)
+                .map(|index| {
+                    let database = &database;
+                    scope.spawn(move || {
+                        let mut history = History::open(database).expect("open history");
+                        let project = PathBuf::from(format!("/project-{index}"));
+                        history.record(&project).expect("record project");
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            for writer in writers {
+                writer.join().expect("recording thread should finish");
+            }
+        });
+
+        let history = History::open(database)?;
+        assert_eq!(history.projects.len(), 100);
         Ok(())
     }
 }
