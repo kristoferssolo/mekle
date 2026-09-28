@@ -21,13 +21,35 @@ shell integration for Bash, Zsh, Fish, and Elvish.
 
 [Quick start](#quick-start) / [Shell setup](#jump-to-a-project) / [Configuration](#configuration) / [CLI reference](#usage)
 
-## Install
+## Installation
+
+<details>
+<summary>Cargo</summary>
 
 With Rust and Cargo installed:
 
 ```sh
 cargo install mekle
 ```
+
+or
+
+```sh
+cargo binstall mekle
+```
+
+</details>
+
+<details>
+<summary>Arch</summary>
+
+With an AUR helper:
+
+```sh
+paru -S mekle-bin
+```
+
+</details>
 
 ## Quick start
 
@@ -233,11 +255,12 @@ Start a new shell to load it.
 
 ## Configuration
 
-Built-in defaults come from [`config/config.toml`](config/config.toml). User
-configuration is read from `$XDG_CONFIG_HOME/mekle/config.toml`, falling back
-to `$HOME/.config/mekle/config.toml`.
+Built-in defaults come from [`config/config.toml`](config/config.toml). AUR
+packages create `/etc/xdg/mekle/config.toml` on installation if it is missing.
+User configuration is read from `$XDG_CONFIG_HOME/mekle/config.toml`, falling
+back to `$HOME/.config/mekle/config.toml`. User settings override system
+settings, and command-line options override both.
 
-Configured fields replace their defaults; command-line options override both.
 A leading `~` in `search_dirs` expands to `$HOME`.
 
 ```toml

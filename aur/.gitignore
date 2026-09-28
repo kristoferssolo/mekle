@@ -1,0 +1,8 @@
+# makepkg build directories
+/*/src/
+/*/pkg/
+
+# Downloaded sources and built package archives
+/*/*.tar.*
+/mekle-bin/config.toml
+/mekle-git/mekle/

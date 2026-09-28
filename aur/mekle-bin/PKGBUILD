@@ -1,0 +1,26 @@
+# Maintainer: Kristofers Solo <aur at kristofers dot xyz>
+pkgname=mekle-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Fast project discovery tool for developers (prebuilt binary)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/kristoferssolo/mekle'
+license=('MIT' 'Apache-2.0')
+depends=('glibc' 'gcc-libs')
+provides=('mekle')
+conflicts=('mekle' 'mekle-git')
+install=mekle.install
+source=("config.toml::https://raw.githubusercontent.com/kristoferssolo/mekle/v$pkgver/config/config.toml")
+source_x86_64=("mekle-$pkgver-x86_64-unknown-linux-gnu.tar.gz::$url/releases/download/v$pkgver/mekle-$pkgver-x86_64-unknown-linux-gnu.tar.gz")
+source_aarch64=("mekle-$pkgver-aarch64-unknown-linux-gnu.tar.gz::$url/releases/download/v$pkgver/mekle-$pkgver-aarch64-unknown-linux-gnu.tar.gz")
+sha256sums=('ef0441b3de96875b2eb09774d1b5a2c9cccc10c46e6660db6243c42fe4d11a57')
+sha256sums_x86_64=('c7ea46855c2a0877c8f25bd878fc111489b2bc4c82ac212813d946a614c08f9b')
+sha256sums_aarch64=('f50713f2c34e3f4dcb820ceeceacac62e42da51b7773b136077c4f25f82d618c')
+
+package() {
+    local archive="mekle-$pkgver-$CARCH-unknown-linux-gnu"
+    install -Dm755 "$archive/mekle" "$pkgdir/usr/bin/mekle"
+    install -Dm644 config.toml "$pkgdir/usr/share/mekle/config.toml"
+    install -Dm644 "$archive/LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+    install -Dm644 "$archive/LICENSE-APACHE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

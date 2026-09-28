@@ -1,8 +1,8 @@
 //! The command line, the configuration file, and how they layer.
 //!
-//! Settings come from three sources, each overriding the one before it: the
-//! defaults embedded at compile time, the user's configuration file, and the
-//! command line.
+//! Settings come from four sources, each overriding the one before it: the
+//! defaults embedded at compile time, the system configuration file, the
+//! user's configuration file, and the command line.
 
 use crate::{
     completions::CompletionShell,
@@ -17,6 +17,7 @@ use std::{
 };
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.toml");
+const SYSTEM_CONFIG_PATH: &str = "/etc/xdg/mekle/config.toml";
 
 #[derive(Debug, Parser, Clone)]
 #[command(
@@ -188,10 +189,19 @@ impl Invocation {
     ///
     /// Returns an error when the configuration file cannot be read or parsed.
     pub fn load() -> Result<Self> {
-        Self::from_cli(Cli::parse(), paths::config_file().as_deref())
+        let user_config_path = paths::config_file();
+        Self::from_cli(
+            Cli::parse(),
+            Some(Path::new(SYSTEM_CONFIG_PATH)),
+            user_config_path.as_deref(),
+        )
     }
 
-    fn from_cli(cli: Cli, config_path: Option<&Path>) -> Result<Self> {
+    fn from_cli(
+        cli: Cli,
+        system_config_path: Option<&Path>,
+        user_config_path: Option<&Path>,
+    ) -> Result<Self> {
         let home = paths::home();
         let Cli { command, search } = cli;
 
@@ -200,20 +210,22 @@ impl Invocation {
             Some(CliCommand::Init { shell }) => Ok(Self::Init(shell)),
             Some(CliCommand::Add { path }) => Ok(Self::Add {
                 path: paths::expand_tilde(&path, home.as_deref()),
-                config: Config::from_sources(search, config_path)?,
+                config: Config::from_sources(search, system_config_path, user_config_path)?,
             }),
             Some(CliCommand::Pin { path }) => Ok(Self::Pin {
                 path: paths::expand_tilde(&path, home.as_deref()),
-                config: Config::from_sources(search, config_path)?,
+                config: Config::from_sources(search, system_config_path, user_config_path)?,
             }),
             Some(CliCommand::Unpin { path }) => Ok(Self::Unpin {
                 path: paths::expand_tilde(&path, home.as_deref()),
-                config: Config::from_sources(search, config_path)?,
+                config: Config::from_sources(search, system_config_path, user_config_path)?,
             }),
             Some(CliCommand::History { command }) => {
                 Ok(Self::History(command.expand_path(home.as_deref())))
             }
-            None => Config::from_sources(search, config_path).map(Self::Find),
+            None => {
+                Config::from_sources(search, system_config_path, user_config_path).map(Self::Find)
+            }
         }
     }
 }
@@ -256,11 +268,17 @@ impl Config {
         toml::from_str(DEFAULT_CONFIG).map_err(|source| Error::ParseDefaultConfig { source })
     }
 
-    fn from_sources(cli: SearchArgs, path: Option<&Path>) -> Result<Self> {
+    fn from_sources(
+        cli: SearchArgs,
+        system_config_path: Option<&Path>,
+        user_config_path: Option<&Path>,
+    ) -> Result<Self> {
         let mut config = Self::defaults()?;
 
-        if let Some(file) = path.map(read_config_file).transpose()?.flatten() {
-            file.apply_to(&mut config);
+        for path in [system_config_path, user_config_path].into_iter().flatten() {
+            if let Some(file) = read_config_file(path)? {
+                file.apply_to(&mut config);
+            }
         }
 
         cli.apply_to(&mut config);
@@ -340,7 +358,7 @@ mod tests {
     /// Parses `args` and layers it over `path`, the way a run would.
     fn config_from(args: &[&str], path: Option<&Path>) -> Result<Config> {
         let cli = Cli::try_parse_from(args).expect("the arguments parse");
-        Config::from_sources(cli.search, path)
+        Config::from_sources(cli.search, None, path)
     }
 
     /// Writes a configuration file holding `contents` and returns its path.
@@ -392,6 +410,26 @@ max_results = 20
         assert_eq!(config.depth, 12);
         assert!(config.verbose);
         assert_eq!(config.max_results.map(NonZeroUsize::get), Some(20));
+        Ok(())
+    }
+
+    #[test]
+    fn user_config_overrides_system_config() -> Result<()> {
+        let temp = TempDir::new().expect("create temp dir");
+        let system = temp.path().join("system.toml");
+        let user = temp.path().join("user.toml");
+        write(&system, "search_dirs = [\"/system\"]\ndepth = 8\n").expect("write system config");
+        write(&user, "search_dirs = [\"/user\"]\n").expect("write user config");
+        let cli = Cli::try_parse_from(["mekle"]).expect("arguments parse");
+
+        let system_only = Config::from_sources(cli.search.clone(), Some(&system), None)?;
+        assert_eq!(system_only.paths, [PathBuf::from("/system")]);
+        assert_eq!(system_only.depth, 8);
+
+        let config = Config::from_sources(cli.search, Some(&system), Some(&user))?;
+
+        assert_eq!(config.paths, [PathBuf::from("/user")]);
+        assert_eq!(config.depth, 8);
         Ok(())
     }
 
@@ -485,7 +523,7 @@ max_results = 20
     fn add_carries_the_search_configuration() -> Result<()> {
         let cli = Cli::try_parse_from(["mekle", "add", "/projects/one"]).expect("arguments parse");
 
-        let invocation = Invocation::from_cli(cli, None)?;
+        let invocation = Invocation::from_cli(cli, None, None)?;
 
         match invocation {
             Invocation::Add { path, config } => {
@@ -504,7 +542,7 @@ max_results = 20
         for args in [["mekle", "pin", "~/one"], ["mekle", "unpin", "~/one"]] {
             let cli = Cli::try_parse_from(args).expect("arguments parse");
 
-            match Invocation::from_cli(cli, None)? {
+            match Invocation::from_cli(cli, None, None)? {
                 Invocation::Pin { path, config } | Invocation::Unpin { path, config } => {
                     assert_eq!(path, home.join("one"));
                     assert_eq!(config.depth, 5);
@@ -519,7 +557,7 @@ max_results = 20
     fn a_bare_invocation_searches() -> Result<()> {
         let cli = Cli::try_parse_from(["mekle", "--json"]).expect("arguments parse");
 
-        match Invocation::from_cli(cli, None)? {
+        match Invocation::from_cli(cli, None, None)? {
             Invocation::Find(config) => assert_eq!(config.output, OutputFormat::Json),
             other => panic!("expected a find invocation, got {other:?}"),
         }

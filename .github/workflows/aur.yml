@@ -1,0 +1,64 @@
+name: AUR
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Package channel to publish
+        required: true
+        type: choice
+        options: [git, release]
+      version:
+        description: Release version, required for the release channel
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: aur-${{ github.event_name == 'push' && 'git' || inputs.channel }}
+  cancel-in-progress: false
+jobs:
+  git:
+    if: github.event_name == 'push' || inputs.channel == 'git'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
+      - name: Prepare mekle-git
+        run: bash aur/prepare.sh mekle-git
+      - name: Publish mekle-git
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: mekle-git
+          asset_dir: aur/mekle-git
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          ssh_keyscan_types: ed25519
+          commit_message: Update mekle-git to ${{ github.sha }}
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'release'
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [mekle, mekle-bin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare package
+        env:
+          VERSION: ${{ inputs.version }}
+        run: bash aur/prepare.sh "${{ matrix.package }}" "$VERSION"
+      - name: Publish package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: ${{ matrix.package }}
+          asset_dir: aur/${{ matrix.package }}
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          ssh_keyscan_types: ed25519
+          commit_message: Update ${{ matrix.package }} to ${{ inputs.version }}
