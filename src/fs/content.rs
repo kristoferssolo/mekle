@@ -31,13 +31,17 @@ impl ContentTest {
         }
     }
 
-    /// Applies this test to the contents of `file`. A missing file matches
-    /// nothing.
+    /// Applies this test to the contents of `file`. A missing path or a path
+    /// that does not name a regular file matches nothing.
     ///
     /// # Errors
     ///
-    /// Returns an error if `file` exists but cannot be read.
+    /// Returns an error if `file` cannot be inspected or read.
     pub fn matches_file(self, file: &Path) -> Result<bool> {
+        if fs::entry_kind(file)? != Some(fs::EntryKind::File) {
+            return Ok(false);
+        }
+
         Ok(fs::read(file)?.is_some_and(|contents| self.matches(&contents)))
     }
 }
