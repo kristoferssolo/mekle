@@ -1,65 +1,116 @@
+export RUST_LOG := env("RUST_LOG", "mekle=debug")
+export RUST_BACKTRACE := env("RUST_BACKTRACE", "1")
+export RUST_SPANTRACE := env("RUST_SPANTRACE", "1")
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
 alias a := audit
+alias b := build
 alias c := check
 alias f := fmt
 alias i := install
 alias r := run
+alias rr := run-release
 alias t := test
 
-# List the available recipes.
+# List available recipes
 default:
     @just --list
 
-# Run the checks CI runs, in the order that fails fastest.
+# Run local pre-commit checks, formatting the workspace first
+[group("checks")]
+ci: fmt clippy test doc
+
+# Run the same checks as CI without modifying files
+[group("checks")]
 check: fmt-check clippy test doc
 
-# Format the workspace.
+# Format the workspace
+[group("checks")]
 fmt:
     cargo fmt --all
 
-# Fail if anything is unformatted.
+# Fail if anything is unformatted
+[group("checks")]
 fmt-check:
     cargo fmt --all -- --check
 
-# Lint with the pedantic and nursery groups denied, as CI does.
+# Lint all workspace targets
+[group("checks")]
 clippy:
     cargo clippy --workspace --all-features --all-targets -- --deny warnings
 
-# Run the test suite.
+# Run the test suite
+[group("checks")]
 test *ARGS:
-    cargo nextest run --all-features {{ ARGS }}
+    cargo nextest run --workspace --all-features {{ ARGS }}
 
-# Build the documentation, private items included.
+# Build documentation, including private items
+[group("checks")]
 doc *ARGS:
-    cargo doc --workspace --all-features --document-private-items --no-deps {{ ARGS }}
+    RUSTDOCFLAGS="-D warnings" cargo doc \
+        --workspace \
+        --all-features \
+        --document-private-items \
+        --no-deps \
+        {{ ARGS }}
 
-# Run the binary against PATHS, forwarding any flags.
+# Run mekle
+[group("run")]
 run *ARGS:
+    cargo run -- {{ ARGS }}
+
+# Run an optimized build of mekle
+[group("run")]
+run-release *ARGS:
     cargo run --release -- {{ ARGS }}
 
-# Install the binary from this checkout.
+# Build the entire workspace
+[group("build")]
+build:
+    cargo build --workspace --all-features
+
+# Build the entire workspace in release mode
+[group("build")]
+build-release:
+    cargo build --release --workspace --all-features
+
+# Install mekle from this checkout
+[group("build")]
 install:
     cargo install --path . --locked
 
-# Benchmark. Pass a group or benchmark name to narrow the run, for example
-# `just bench ranking`. The scan and discovery groups walk real temporary trees.
+# Watch the workspace during development
+[group("development")]
+watch:
+    bacon
+
+# Run benchmarks
+[group("development")]
 bench *ARGS:
     cargo bench --bench benchmark -- {{ ARGS }}
 
-# Show what could move, including majors held back by the ranges in Cargo.toml.
+# Show dependency updates without modifying Cargo.lock
+[group("dependencies")]
 outdated:
     cargo update --dry-run --verbose
 
-# Update dependencies within the ranges in Cargo.toml.
+# Update dependencies within Cargo.toml constraints
+[group("dependencies")]
 update:
     cargo update
 
-# Audit dependencies for known advisories. Needs `cargo install cargo-audit`.
+# Audit dependencies for known advisories
+[group("dependencies")]
 audit:
     cargo audit
 
-# Remove build artifacts.
+# Remove build artifacts
+[group("maintenance")]
 clean:
     cargo clean
 
+# Install development tools used by this Justfile
+[group("maintenance")]
 setup:
     cargo install cargo-nextest bacon cargo-audit
