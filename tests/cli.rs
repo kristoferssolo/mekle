@@ -66,6 +66,7 @@ impl Run {
         let mut command = Command::new(BIN);
         command
             .args(&self.args)
+            .env_remove("RUST_LOG")
             .env("XDG_CONFIG_HOME", self.config_home.path())
             .env("XDG_DATA_HOME", self.config_home.path())
             .envs(self.envs.iter().cloned());
