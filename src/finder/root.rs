@@ -4,10 +4,10 @@
 //! marker is walked upwards until it reaches the repository or workspace that
 //! owns it.
 
-use super::is_covered;
 use crate::{
     config::Config,
-    error::Result,
+    error::{Error, Result},
+    finder::is_covered,
     fs::{self, content::ContentTest},
     git::{GIT_DIR, marks_repository},
 };
@@ -233,7 +233,7 @@ fn ancestors_above(dir: &Path) -> impl Iterator<Item = &Path> {
 }
 
 fn absolute_path(path: &Path) -> Result<PathBuf> {
-    std::path::absolute(path).map_err(|source| crate::error::Error::ResolvePath {
+    std::path::absolute(path).map_err(|source| Error::ResolvePath {
         path: path.to_path_buf(),
         source,
     })
@@ -250,11 +250,10 @@ fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
 /// Keeps relative inputs relative in discovery output, including roots above
 /// the current directory.
 fn relative_to_current_dir(path: &Path) -> Result<PathBuf> {
-    let current_dir =
-        std::env::current_dir().map_err(|source| crate::error::Error::ResolvePath {
-            path: path.to_path_buf(),
-            source,
-        })?;
+    let current_dir = std::env::current_dir().map_err(|source| Error::ResolvePath {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let current_components = current_dir.components().collect::<Vec<_>>();
     let path_components = path.components().collect::<Vec<_>>();
     let shared = current_components
