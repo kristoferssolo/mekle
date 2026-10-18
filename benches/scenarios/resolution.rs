@@ -17,7 +17,7 @@ const NESTING_LEVELS: [usize; 3] = [4, 16, 64];
 const VENDORED_REPOS: usize = 32;
 
 pub fn benchmark_root_resolution(c: &mut Criterion) {
-    let config = defaults();
+    let config = without_markers();
 
     let mut group = c.benchmark_group("root_resolution");
 
@@ -48,7 +48,7 @@ pub fn benchmark_root_resolution(c: &mut Criterion) {
 /// One marker resolved from `levels` directories down, so the reported time is
 /// the latency of a single ascent rather than a rate.
 pub fn benchmark_deep_ascent(c: &mut Criterion) {
-    let config = defaults();
+    let config = without_markers();
 
     let mut group = c.benchmark_group("deep_ascent");
 
@@ -123,6 +123,15 @@ pub fn benchmark_directory_resolution(c: &mut Criterion) {
 
 fn defaults() -> Config {
     Config::defaults().expect("the built-in configuration parses")
+}
+
+/// `resolve` never reads the marker list, and the resolver is dropped inside the
+/// timed region, so an unused copy would only add deallocation to the timings.
+fn without_markers() -> Config {
+    Config {
+        marker_files: Vec::new(),
+        ..defaults()
+    }
 }
 
 fn resolve_all(resolver: &RootResolver, markers: &[PathBuf]) -> Vec<PathBuf> {
