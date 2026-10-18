@@ -10,6 +10,7 @@ use crate::{
     finder::is_covered,
     fs::{self, content::ContentTest},
     git::{GIT_DIR, marks_repository},
+    paths,
 };
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -76,7 +77,7 @@ impl RootResolver {
     ///
     /// Panics if a cache lock is poisoned.
     pub fn resolve_directory(&self, dir: &Path) -> Result<PathBuf> {
-        let absolute_dir = absolute_path(dir)?;
+        let absolute_dir = paths::absolute(dir)?;
         let mut projects = HashSet::new();
         let mut candidates = BTreeSet::new();
 
@@ -117,7 +118,7 @@ impl RootResolver {
     ///
     /// Panics if a cache lock is poisoned.
     pub fn resolve(&self, dir: &Path, marker_name: &str) -> Result<PathBuf> {
-        let absolute_dir = absolute_path(dir)?;
+        let absolute_dir = paths::absolute(dir)?;
         let cache_key = (absolute_dir, MarkerType::from(marker_name));
 
         if let Some(root) = self.root_cache.read().expect(POISONED).get(&cache_key) {
@@ -219,13 +220,6 @@ fn ancestors_above(dir: &Path) -> impl Iterator<Item = &Path> {
     dir.ancestors()
         .skip(1)
         .take_while(|ancestor| !ancestor.as_os_str().is_empty())
-}
-
-fn absolute_path(path: &Path) -> Result<PathBuf> {
-    std::path::absolute(path).map_err(|source| Error::ResolvePath {
-        path: path.to_path_buf(),
-        source,
-    })
 }
 
 fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
