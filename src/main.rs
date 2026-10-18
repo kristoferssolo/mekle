@@ -4,8 +4,8 @@ use color_eyre::{
 };
 use mekle::{
     completions,
-    config::{Config, HistoryCommand, Invocation, cli_command},
-    error::{self, Error},
+    config::{Config, HistoryCommand, Invocation, ProjectAction, cli_command},
+    error::Error,
     finder::{ProjectFinder, root::RootResolver},
     history::{History, HistoryEntry, ScoreChange},
     output::{include_pinned, rank_projects, write_entries, write_projects},
@@ -34,9 +34,11 @@ fn main() -> Result<()> {
             print!("{}", shell.init());
             Ok(())
         }
-        Invocation::Add { path, config } => add_project(&path, &config),
-        Invocation::Pin { path, config } => change_pin(&path, &config, History::pin),
-        Invocation::Unpin { path, config } => change_pin(&path, &config, History::unpin),
+        Invocation::Project {
+            action,
+            path,
+            config,
+        } => change_project(action, &path, &config),
         Invocation::History(command) => manage_history(command),
     }
 }
@@ -70,21 +72,16 @@ fn find_projects(config: Config) -> Result<()> {
     Ok(())
 }
 
-fn add_project(path: &Path, config: &Config) -> Result<()> {
-    init_logging(config.verbose)?;
-    open_history()?.record(&resolve_project(path, config)?)?;
-    Ok(())
-}
-
-/// Pins or unpins the project `path` belongs to, whichever `change` is.
-fn change_pin(
-    path: &Path,
-    config: &Config,
-    change: fn(&mut History, &Path) -> error::Result<()>,
-) -> Result<()> {
+/// Applies `action` to the project `path` belongs to.
+fn change_project(action: ProjectAction, path: &Path, config: &Config) -> Result<()> {
     init_logging(config.verbose)?;
     let project = resolve_project(path, config)?;
-    change(&mut open_history()?, &project)?;
+    let mut history = open_history()?;
+    match action {
+        ProjectAction::Add => history.record(&project)?,
+        ProjectAction::Pin => history.pin(&project)?,
+        ProjectAction::Unpin => history.unpin(&project)?,
+    }
     Ok(())
 }
 
