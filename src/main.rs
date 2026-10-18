@@ -73,14 +73,24 @@ fn find_projects(config: Config) -> Result<()> {
 }
 
 /// Applies `action` to the project `path` belongs to.
+///
+/// Errors surface in a fixed order per action: `add` reports an unusable
+/// history before a missing path, while `pin` and `unpin` do the opposite.
 fn change_project(action: ProjectAction, path: &Path, config: &Config) -> Result<()> {
     init_logging(config.verbose)?;
-    let project = resolve_project(path, config)?;
-    let mut history = open_history()?;
     match action {
-        ProjectAction::Add => history.record(&project)?,
-        ProjectAction::Pin => history.pin(&project)?,
-        ProjectAction::Unpin => history.unpin(&project)?,
+        ProjectAction::Add => {
+            let mut history = open_history()?;
+            history.record(&resolve_project(path, config)?)?;
+        }
+        ProjectAction::Pin => {
+            let project = resolve_project(path, config)?;
+            open_history()?.pin(&project)?;
+        }
+        ProjectAction::Unpin => {
+            let project = resolve_project(path, config)?;
+            open_history()?.unpin(&project)?;
+        }
     }
     Ok(())
 }

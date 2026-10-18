@@ -4,6 +4,7 @@ mod common;
 
 use color_eyre::eyre::{Result, bail, eyre};
 use common::{file, repository, worktree};
+use rstest::rstest;
 use std::{
     ffi::{OsStr, OsString},
     fs::{create_dir_all, remove_dir, write},
@@ -823,6 +824,27 @@ fn a_corrupt_history_fails_before_the_search() -> Result<()> {
         stderr.contains("history.toml"),
         "unexpected stderr: {stderr}"
     );
+    Ok(())
+}
+
+#[rstest]
+#[case::add_reports_the_history_first("add", "history.toml")]
+#[case::pin_reports_the_path_first("pin", "Path not found")]
+#[case::unpin_reports_the_path_first("unpin", "Path not found")]
+fn a_failing_project_change_reports_errors_in_a_fixed_order(
+    #[case] action: &str,
+    #[case] expected: &str,
+) -> Result<()> {
+    let run = Run::new()?
+        .arg(action)
+        .arg("/definitely/not/a/real/directory");
+    let dir = run.config_home.path().join("mekle");
+    create_dir_all(&dir)?;
+    write(dir.join("history.toml"), "not = [valid")?;
+
+    let stderr = run.failure()?;
+
+    assert!(stderr.contains(expected), "unexpected stderr: {stderr}");
     Ok(())
 }
 
