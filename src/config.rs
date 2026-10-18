@@ -374,7 +374,7 @@ mod tests {
 
         assert_eq!(config.paths, [PathBuf::from(".")]);
         assert_eq!(config.depth, 5);
-        assert!(config.exclude.is_empty());
+        assert_eq!(config.exclude, Vec::<String>::new());
         assert!(config.marker_files.iter().any(|file| file == "Cargo.toml"));
         assert!(
             config
