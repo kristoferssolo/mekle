@@ -105,7 +105,8 @@ pub fn normalize(path: &Path) -> Result<PathBuf> {
 ///
 /// # Errors
 ///
-/// Returns an error if the current directory is needed and cannot be read.
+/// Returns an error if the path cannot be made absolute, for example when it
+/// is empty or the current directory is unavailable.
 pub fn absolute(path: &Path) -> Result<PathBuf> {
     std::path::absolute(path).map_err(|source| Error::ResolvePath {
         path: path.to_path_buf(),
