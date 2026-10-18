@@ -810,6 +810,22 @@ fn rust_log_enables_scan_diagnostics_on_stderr_only() -> Result<()> {
 }
 
 #[test]
+fn a_corrupt_history_fails_before_the_search() -> Result<()> {
+    let run = Run::new()?.arg("/definitely/not/a/real/directory");
+    let dir = run.config_home.path().join("mekle");
+    create_dir_all(&dir)?;
+    write(dir.join("history.toml"), "not = [valid")?;
+
+    let stderr = run.failure()?;
+
+    assert!(
+        stderr.contains("history.toml"),
+        "unexpected stderr: {stderr}"
+    );
+    Ok(())
+}
+
+#[test]
 fn projects_under_home_print_with_a_tilde() -> Result<()> {
     let temp = sample_tree()?;
 
