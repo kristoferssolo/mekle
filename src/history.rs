@@ -163,7 +163,8 @@ impl History {
                 ScoreChange::Set(score) => history.set_score(path, score)?,
                 ScoreChange::Adjust(delta) => history.adjust_score(path, delta)?,
                 ScoreChange::Remove => {
-                    history.projects.remove(history.position_of(path)?);
+                    let position = history.require_position_of(path)?;
+                    history.projects.remove(position);
                 }
             }
             history.age();
@@ -232,9 +233,9 @@ impl History {
     /// visited, so it starts at the score one visit would have earned.
     fn set_pinned(&mut self, path: &Path, pinned: bool) -> Result<()> {
         match self.position_of(path) {
-            Ok(position) => self.projects[position].pinned = pinned,
-            Err(error) if !pinned => return Err(error),
-            Err(_) => self.projects.push(ProjectUsage {
+            Some(position) => self.projects[position].pinned = pinned,
+            None if !pinned => return Err(Error::HistoryEntryNotFound(path.to_path_buf())),
+            None => self.projects.push(ProjectUsage {
                 pinned: true,
                 ..ProjectUsage::new(path, MINIMUM_SCORE, unix_timestamp(SystemTime::now())?)
             }),
@@ -242,18 +243,22 @@ impl History {
         Ok(())
     }
 
-    fn position_of(&self, path: &Path) -> Result<usize> {
+    fn position_of(&self, path: &Path) -> Option<usize> {
         self.projects
             .iter()
             .position(|project| project.path == path)
+    }
+
+    fn require_position_of(&self, path: &Path) -> Result<usize> {
+        self.position_of(path)
             .ok_or_else(|| Error::HistoryEntryNotFound(path.to_path_buf()))
     }
 
     fn set_score(&mut self, path: &Path, score: f64) -> Result<()> {
         validate_score(score)?;
         match self.position_of(path) {
-            Ok(position) => self.projects[position].score = score,
-            Err(_) => self.projects.push(ProjectUsage::new(
+            Some(position) => self.projects[position].score = score,
+            None => self.projects.push(ProjectUsage::new(
                 path,
                 score,
                 unix_timestamp(SystemTime::now())?,
@@ -267,7 +272,7 @@ impl History {
             return Err(Error::InvalidScore(delta));
         }
 
-        let position = self.position_of(path)?;
+        let position = self.require_position_of(path)?;
         let score = self.projects[position].score + delta;
         // Adjusting a project below the floor retires it instead of failing.
         if score < MINIMUM_SCORE {
