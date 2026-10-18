@@ -24,8 +24,8 @@ const HISTORY_VERSION: u8 = 1;
 const MAX_TOTAL_SCORE: f64 = 10_000.0;
 const AGED_TOTAL_SCORE: f64 = MAX_TOTAL_SCORE * 0.9;
 
-const HOUR: u64 = 3600;
-const DAY: u64 = 24 * HOUR;
+pub(crate) const HOUR: u64 = 3600;
+pub(crate) const DAY: u64 = 24 * HOUR;
 const WEEK: u64 = 7 * DAY;
 
 /// The lowest score worth keeping. Anything below it is dropped when aging.
