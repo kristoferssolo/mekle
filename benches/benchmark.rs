@@ -1,7 +1,6 @@
 //! Benchmarks for mekle, grouped by the stage of a run they cover.
 //!
 //! Run one stage with `just bench <group>`, for example `just bench ranking`.
-//! The `scan` and `discovery` groups need `fd` on `PATH`.
 
 mod common;
 mod scenarios;
