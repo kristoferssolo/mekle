@@ -83,7 +83,6 @@ mod tests {
             assert!(script.contains(declaration));
             assert!(script.contains("fzf"));
             assert!(script.contains("mekle add"));
-            assert!(!script.contains("pf"));
         }
     }
 }

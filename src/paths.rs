@@ -91,13 +91,24 @@ pub fn contract_tilde(path: &Path, home: Option<&Path>) -> PathBuf {
 ///
 /// Returns an error if `path` cannot be resolved.
 pub fn normalize(path: &Path) -> Result<PathBuf> {
-    let absolute = std::path::absolute(path).map_err(|source| Error::ResolvePath {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let absolute = absolute(path)?;
     let resolved = resolve_from_existing_prefix(&absolute);
 
     resolved.map_err(|source| Error::ResolvePath {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// Makes `path` absolute against the current directory without touching the
+/// filesystem, so symlinks are kept and the path need not exist.
+///
+/// # Errors
+///
+/// Returns an error if the path cannot be made absolute, for example when it
+/// is empty or the current directory is unavailable.
+pub fn absolute(path: &Path) -> Result<PathBuf> {
+    std::path::absolute(path).map_err(|source| Error::ResolvePath {
         path: path.to_path_buf(),
         source,
     })

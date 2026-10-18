@@ -4,12 +4,13 @@
 //! marker is walked upwards until it reaches the repository or workspace that
 //! owns it.
 
-use super::is_covered;
 use crate::{
     config::Config,
-    error::Result,
+    error::{Error, Result},
+    finder::is_covered,
     fs::{self, content::ContentTest},
     git::{GIT_DIR, marks_repository},
+    paths,
 };
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -55,17 +56,6 @@ pub struct RootResolver {
 
 impl RootResolver {
     #[must_use]
-    pub fn new(workspace_files: Vec<String>) -> Self {
-        Self {
-            marker_files: Box::default(),
-            workspace_files: workspace_files.into(),
-            workspace_cache: RwLock::default(),
-            cargo_workspace_cache: RwLock::default(),
-            root_cache: RwLock::default(),
-        }
-    }
-
-    #[must_use]
     pub fn from_config(config: &Config) -> Self {
         Self {
             marker_files: config.marker_files.clone().into(),
@@ -87,7 +77,7 @@ impl RootResolver {
     ///
     /// Panics if a cache lock is poisoned.
     pub fn resolve_directory(&self, dir: &Path) -> Result<PathBuf> {
-        let absolute_dir = absolute_path(dir)?;
+        let absolute_dir = paths::absolute(dir)?;
         let mut projects = HashSet::new();
         let mut candidates = BTreeSet::new();
 
@@ -128,7 +118,7 @@ impl RootResolver {
     ///
     /// Panics if a cache lock is poisoned.
     pub fn resolve(&self, dir: &Path, marker_name: &str) -> Result<PathBuf> {
-        let absolute_dir = absolute_path(dir)?;
+        let absolute_dir = paths::absolute(dir)?;
         let cache_key = (absolute_dir, MarkerType::from(marker_name));
 
         if let Some(root) = self.root_cache.read().expect(POISONED).get(&cache_key) {
@@ -232,13 +222,6 @@ fn ancestors_above(dir: &Path) -> impl Iterator<Item = &Path> {
         .take_while(|ancestor| !ancestor.as_os_str().is_empty())
 }
 
-fn absolute_path(path: &Path) -> Result<PathBuf> {
-    std::path::absolute(path).map_err(|source| crate::error::Error::ResolvePath {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
 fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
     if input.is_absolute() {
         Ok(root)
@@ -250,11 +233,10 @@ fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
 /// Keeps relative inputs relative in discovery output, including roots above
 /// the current directory.
 fn relative_to_current_dir(path: &Path) -> Result<PathBuf> {
-    let current_dir =
-        std::env::current_dir().map_err(|source| crate::error::Error::ResolvePath {
-            path: path.to_path_buf(),
-            source,
-        })?;
+    let current_dir = std::env::current_dir().map_err(|source| Error::ResolvePath {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let current_components = current_dir.components().collect::<Vec<_>>();
     let path_components = path.components().collect::<Vec<_>>();
     let shared = current_components
@@ -434,7 +416,9 @@ mod tests {
         write(member.join("Cargo.toml"), "[package]\nname = \"one\"\n")
             .expect("write member manifest");
 
-        let resolver = RootResolver::new(Vec::new());
+        let mut config = Config::defaults().expect("load default config");
+        config.workspace_files.clear();
+        let resolver = RootResolver::from_config(&config);
 
         assert_ok_eq!(resolver.resolve(&member, "Cargo.toml"), worktree);
     }
