@@ -15,7 +15,7 @@ use std::{
     io::{stderr, stdout},
     path::{Path, PathBuf},
 };
-use tracing::Level;
+use tracing::{Level, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 fn main() -> Result<()> {
@@ -97,7 +97,13 @@ fn resolve_project(path: &Path, config: &Config) -> Result<PathBuf> {
         return Err(Error::PathNotFound(path.to_path_buf()).into());
     }
 
-    Ok(RootResolver::from_config(config).resolve_directory(&paths::normalize(path)?)?)
+    let project = RootResolver::from_config(config).resolve_directory(&paths::normalize(path)?)?;
+    info!(
+        "Resolved {} to project {}",
+        path.display(),
+        project.display()
+    );
+    Ok(project)
 }
 
 fn manage_history(command: HistoryCommand) -> Result<()> {
