@@ -24,8 +24,8 @@ const HISTORY_VERSION: u8 = 1;
 const MAX_TOTAL_SCORE: f64 = 10_000.0;
 const AGED_TOTAL_SCORE: f64 = MAX_TOTAL_SCORE * 0.9;
 
-const HOUR: u64 = 3600;
-const DAY: u64 = 24 * HOUR;
+pub(crate) const HOUR: u64 = 3600;
+pub(crate) const DAY: u64 = 24 * HOUR;
 const WEEK: u64 = 7 * DAY;
 
 /// The lowest score worth keeping. Anything below it is dropped when aging.
@@ -163,7 +163,8 @@ impl History {
                 ScoreChange::Set(score) => history.set_score(path, score)?,
                 ScoreChange::Adjust(delta) => history.adjust_score(path, delta)?,
                 ScoreChange::Remove => {
-                    history.projects.remove(history.position_of(path)?);
+                    let position = history.require_position_of(path)?;
+                    history.projects.remove(position);
                 }
             }
             history.age();
@@ -232,9 +233,9 @@ impl History {
     /// visited, so it starts at the score one visit would have earned.
     fn set_pinned(&mut self, path: &Path, pinned: bool) -> Result<()> {
         match self.position_of(path) {
-            Ok(position) => self.projects[position].pinned = pinned,
-            Err(error) if !pinned => return Err(error),
-            Err(_) => self.projects.push(ProjectUsage {
+            Some(position) => self.projects[position].pinned = pinned,
+            None if !pinned => return Err(Error::HistoryEntryNotFound(path.to_path_buf())),
+            None => self.projects.push(ProjectUsage {
                 pinned: true,
                 ..ProjectUsage::new(path, MINIMUM_SCORE, unix_timestamp(SystemTime::now())?)
             }),
@@ -242,18 +243,22 @@ impl History {
         Ok(())
     }
 
-    fn position_of(&self, path: &Path) -> Result<usize> {
+    fn position_of(&self, path: &Path) -> Option<usize> {
         self.projects
             .iter()
             .position(|project| project.path == path)
+    }
+
+    fn require_position_of(&self, path: &Path) -> Result<usize> {
+        self.position_of(path)
             .ok_or_else(|| Error::HistoryEntryNotFound(path.to_path_buf()))
     }
 
     fn set_score(&mut self, path: &Path, score: f64) -> Result<()> {
         validate_score(score)?;
         match self.position_of(path) {
-            Ok(position) => self.projects[position].score = score,
-            Err(_) => self.projects.push(ProjectUsage::new(
+            Some(position) => self.projects[position].score = score,
+            None => self.projects.push(ProjectUsage::new(
                 path,
                 score,
                 unix_timestamp(SystemTime::now())?,
@@ -267,7 +272,7 @@ impl History {
             return Err(Error::InvalidScore(delta));
         }
 
-        let position = self.position_of(path)?;
+        let position = self.require_position_of(path)?;
         let score = self.projects[position].score + delta;
         // Adjusting a project below the floor retires it instead of failing.
         if score < MINIMUM_SCORE {
@@ -414,6 +419,7 @@ fn unix_timestamp(time: SystemTime) -> Result<u64> {
 mod tests {
     use super::*;
     use claims::{assert_err, assert_ok};
+    use rstest::rstest;
     use tempfile::TempDir;
 
     const NOW: Duration = Duration::from_secs(2_000_000);
@@ -535,6 +541,56 @@ mod tests {
         history.update(Path::new("/project"), ScoreChange::Adjust(-1.5))?;
 
         assert!(history.projects.is_empty());
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::remove(ScoreChange::Remove)]
+    #[case::adjust(ScoreChange::Adjust(1.0))]
+    fn updating_an_unknown_project_fails_and_changes_nothing(
+        #[case] change: ScoreChange,
+    ) -> Result<()> {
+        let temp = TempDir::new().expect("create temp dir");
+        let database = temp.path().join("history.toml");
+        let missing = Path::new("/projects/missing");
+        let mut history = History::open(&database)?;
+        history
+            .projects
+            .push(usage("/projects/known", 2.0, Duration::ZERO));
+        history.save()?;
+        let saved = std::fs::read_to_string(&database).expect("read history file");
+
+        let error = assert_err!(history.update(missing, change));
+
+        assert!(matches!(error, Error::HistoryEntryNotFound(path) if path == missing));
+        assert_eq!(history.projects.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(&database).expect("read history file"),
+            saved
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn setting_a_score_replaces_it_in_place() -> Result<()> {
+        let temp = TempDir::new().expect("create temp dir");
+        let database = temp.path().join("history.toml");
+        let project = Path::new("/project");
+        let last_accessed = NOW.saturating_sub(Duration::from_hours(3)).as_secs();
+        let mut history = History::open(&database)?;
+        history
+            .projects
+            .push(pinned("/project", 2.0, Duration::from_hours(3)));
+        history.save()?;
+
+        history.update(project, ScoreChange::Set(7.0))?;
+        history.update(project, ScoreChange::Set(4.0))?;
+
+        let history = History::open(database)?;
+        assert_eq!(history.projects.len(), 1);
+        assert!((history.projects[0].score - 4.0).abs() < f64::EPSILON);
+        assert_eq!(history.projects[0].last_accessed, last_accessed);
+        assert!(history.projects[0].pinned);
         Ok(())
     }
 

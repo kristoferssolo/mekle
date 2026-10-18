@@ -1,7 +1,11 @@
 //! Joining discovered projects to history, ranking them, and printing them.
 
 use crate::{
-    config::OutputFormat, error::Result, finder::Project, fs, history::HistoryEntry,
+    config::OutputFormat,
+    error::Result,
+    finder::Project,
+    fs,
+    history::{DAY, HOUR, HistoryEntry},
     paths::contract_tilde,
 };
 use serde::Serialize;
@@ -13,8 +17,6 @@ use std::{
 };
 
 const MINUTE: u64 = 60;
-const HOUR: u64 = 60 * MINUTE;
-const DAY: u64 = 24 * HOUR;
 
 /// A discovered project, joined to whatever history knows about it.
 #[derive(Debug, Serialize)]
