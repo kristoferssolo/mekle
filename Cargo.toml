@@ -17,6 +17,9 @@ exclude = [
   "tests/",
   "benches/",
   "justfile",
+  "aur/",
+  "docs/",
+  "clippy.toml",
   "*.png",
   "*.md",
 ]
