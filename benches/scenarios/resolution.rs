@@ -17,7 +17,7 @@ const NESTING_LEVELS: [usize; 3] = [4, 16, 64];
 const VENDORED_REPOS: usize = 32;
 
 pub fn benchmark_root_resolution(c: &mut Criterion) {
-    let workspace_files = defaults().workspace_files;
+    let config = defaults();
 
     let mut group = c.benchmark_group("root_resolution");
 
@@ -29,13 +29,13 @@ pub fn benchmark_root_resolution(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new("cold_cache", members), |b| {
             b.iter_batched(
-                || RootResolver::new(workspace_files.clone()),
+                || RootResolver::from_config(&config),
                 |resolver| black_box(resolve_all(&resolver, &markers)),
                 BatchSize::PerIteration,
             );
         });
 
-        let resolver = RootResolver::new(workspace_files.clone());
+        let resolver = RootResolver::from_config(&config);
         resolve_all(&resolver, &markers);
         group.bench_function(BenchmarkId::new("warm_cache", members), |b| {
             b.iter(|| black_box(resolve_all(&resolver, &markers)));
@@ -48,7 +48,7 @@ pub fn benchmark_root_resolution(c: &mut Criterion) {
 /// One marker resolved from `levels` directories down, so the reported time is
 /// the latency of a single ascent rather than a rate.
 pub fn benchmark_deep_ascent(c: &mut Criterion) {
-    let workspace_files = defaults().workspace_files;
+    let config = defaults();
 
     let mut group = c.benchmark_group("deep_ascent");
 
@@ -58,7 +58,7 @@ pub fn benchmark_deep_ascent(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::from_parameter(levels), |b| {
             b.iter_batched(
-                || RootResolver::new(workspace_files.clone()),
+                || RootResolver::from_config(&config),
                 |resolver| black_box(resolve_all(&resolver, &markers)),
                 BatchSize::SmallInput,
             );

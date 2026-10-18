@@ -55,17 +55,6 @@ pub struct RootResolver {
 
 impl RootResolver {
     #[must_use]
-    pub fn new(workspace_files: Vec<String>) -> Self {
-        Self {
-            marker_files: Box::default(),
-            workspace_files: workspace_files.into(),
-            workspace_cache: RwLock::default(),
-            cargo_workspace_cache: RwLock::default(),
-            root_cache: RwLock::default(),
-        }
-    }
-
-    #[must_use]
     pub fn from_config(config: &Config) -> Self {
         Self {
             marker_files: config.marker_files.clone().into(),
@@ -433,7 +422,9 @@ mod tests {
         write(member.join("Cargo.toml"), "[package]\nname = \"one\"\n")
             .expect("write member manifest");
 
-        let resolver = RootResolver::new(Vec::new());
+        let mut config = Config::defaults().expect("load default config");
+        config.workspace_files.clear();
+        let resolver = RootResolver::from_config(&config);
 
         assert_ok_eq!(resolver.resolve(&member, "Cargo.toml"), worktree);
     }
