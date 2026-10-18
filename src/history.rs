@@ -419,6 +419,7 @@ fn unix_timestamp(time: SystemTime) -> Result<u64> {
 mod tests {
     use super::*;
     use claims::{assert_err, assert_ok};
+    use rstest::rstest;
     use tempfile::TempDir;
 
     const NOW: Duration = Duration::from_secs(2_000_000);
@@ -540,6 +541,56 @@ mod tests {
         history.update(Path::new("/project"), ScoreChange::Adjust(-1.5))?;
 
         assert!(history.projects.is_empty());
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::remove(ScoreChange::Remove)]
+    #[case::adjust(ScoreChange::Adjust(1.0))]
+    fn updating_an_unknown_project_fails_and_changes_nothing(
+        #[case] change: ScoreChange,
+    ) -> Result<()> {
+        let temp = TempDir::new().expect("create temp dir");
+        let database = temp.path().join("history.toml");
+        let missing = Path::new("/projects/missing");
+        let mut history = History::open(&database)?;
+        history
+            .projects
+            .push(usage("/projects/known", 2.0, Duration::ZERO));
+        history.save()?;
+        let saved = std::fs::read_to_string(&database).expect("read history file");
+
+        let error = assert_err!(history.update(missing, change));
+
+        assert!(matches!(error, Error::HistoryEntryNotFound(path) if path == missing));
+        assert_eq!(history.projects.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(&database).expect("read history file"),
+            saved
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn setting_a_score_replaces_it_in_place() -> Result<()> {
+        let temp = TempDir::new().expect("create temp dir");
+        let database = temp.path().join("history.toml");
+        let project = Path::new("/project");
+        let last_accessed = NOW.saturating_sub(Duration::from_hours(3)).as_secs();
+        let mut history = History::open(&database)?;
+        history
+            .projects
+            .push(pinned("/project", 2.0, Duration::from_hours(3)));
+        history.save()?;
+
+        history.update(project, ScoreChange::Set(7.0))?;
+        history.update(project, ScoreChange::Set(4.0))?;
+
+        let history = History::open(database)?;
+        assert_eq!(history.projects.len(), 1);
+        assert!((history.projects[0].score - 4.0).abs() < f64::EPSILON);
+        assert_eq!(history.projects[0].last_accessed, last_accessed);
+        assert!(history.projects[0].pinned);
         Ok(())
     }
 
