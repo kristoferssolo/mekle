@@ -796,6 +796,32 @@ fn verbose_diagnostics_stay_off_stdout() -> Result<()> {
 }
 
 #[test]
+fn verbose_reports_the_resolved_project_on_stderr_only() -> Result<()> {
+    let temp = sample_tree()?;
+
+    for action in ["add", "pin"] {
+        let run = Run::new()?
+            .home(temp.path())
+            .arg("--verbose")
+            .arg(action)
+            .arg("~/alpha");
+        let output = run.output()?;
+
+        assert!(
+            output.status.success(),
+            "{action} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("Resolved"),
+            "expected resolution diagnostics from {action}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn rust_log_enables_scan_diagnostics_on_stderr_only() -> Result<()> {
     let temp = sample_tree()?;
 

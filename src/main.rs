@@ -15,7 +15,7 @@ use std::{
     io::{stderr, stdout},
     path::{Path, PathBuf},
 };
-use tracing::Level;
+use tracing::{Level, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 fn main() -> Result<()> {
@@ -46,8 +46,9 @@ fn main() -> Result<()> {
 fn find_projects(config: Config) -> Result<()> {
     init_logging(config.verbose)?;
 
-    // A broken history should fail before the scan, not after it.
-    let history = open_history()?.entries()?;
+    // A broken history should fail before the scan, not after it. It is read
+    // again afterwards so a long scan cannot rank with stale scores.
+    open_history()?;
 
     // Ranking needs the complete result set, so the limit is applied last.
     let max_results = config.max_results;
@@ -56,6 +57,7 @@ fn find_projects(config: Config) -> Result<()> {
         .find_project_details()
         .wrap_err("Failed to find projects")?;
 
+    let history = open_history()?.entries()?;
     include_pinned(&mut projects, &history)?;
     let mut projects = rank_projects(projects, &history);
     if let Some(max) = max_results {
@@ -102,7 +104,13 @@ fn resolve_project(path: &Path, config: &Config) -> Result<PathBuf> {
         return Err(Error::PathNotFound(path.to_path_buf()).into());
     }
 
-    Ok(RootResolver::from_config(config).resolve_directory(&paths::normalize(path)?)?)
+    let project = RootResolver::from_config(config).resolve_directory(&paths::normalize(path)?)?;
+    info!(
+        "Resolved {} to project {}",
+        path.display(),
+        project.display()
+    );
+    Ok(project)
 }
 
 fn manage_history(command: HistoryCommand) -> Result<()> {
