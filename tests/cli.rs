@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 mod common;
 
 use color_eyre::eyre::{Result, bail, eyre};
