@@ -3,6 +3,7 @@ name = "mekle"
 authors = ["Kristofers Solo <dev@kristofers.xyz>"]
 version = "0.2.0"
 edition = "2024"
+rust-version = "1.89"
 description = "Fast project discovery tool for developers"
 repository = "https://github.com/kristoferssolo/mekle"
 documentation = "https://docs.rs/mekle"
