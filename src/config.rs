@@ -200,7 +200,6 @@ pub struct Config {
     pub exclude: Vec<String>,
     pub depth: usize,
     pub verbose: bool,
-    #[serde(default)]
     pub max_results: Option<NonZeroUsize>,
     #[serde(skip)]
     pub output: OutputFormat,
