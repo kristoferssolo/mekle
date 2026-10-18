@@ -666,13 +666,7 @@ fn history_scores_can_be_set_and_adjusted() -> Result<()> {
         .arg("~/beta")
         .arg("-7");
     run.stdout()?;
-    assert!(
-        run.clear_args()
-            .arg("history")
-            .arg("list")
-            .stdout()?
-            .is_empty()
-    );
+    assert_eq!(run.clear_args().arg("history").arg("list").stdout()?, "");
     Ok(())
 }
 
@@ -693,13 +687,7 @@ fn history_entries_can_be_removed_individually_or_all_at_once() -> Result<()> {
 
     let run = run.clear_args().arg("history").arg("clear");
     run.stdout()?;
-    assert!(
-        run.clear_args()
-            .arg("history")
-            .arg("list")
-            .stdout()?
-            .is_empty()
-    );
+    assert_eq!(run.clear_args().arg("history").arg("list").stdout()?, "");
     Ok(())
 }
 
