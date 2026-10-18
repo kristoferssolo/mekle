@@ -33,11 +33,7 @@ pub enum EntryKind {
 ///
 /// Returns an error if `path` exists but cannot be read.
 pub fn read(path: &Path) -> Result<Option<String>> {
-    match read_to_string(path) {
-        Ok(contents) => Ok(Some(contents)),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(Error::read_file(path, error)),
-    }
+    read_or_none(path, |kind| kind == ErrorKind::NotFound)
 }
 
 /// Reads `path` as text, or returns `None` when it is missing or is not UTF-8.
@@ -49,11 +45,16 @@ pub fn read(path: &Path) -> Result<Option<String>> {
 ///
 /// Returns an error if `path` exists as text but cannot be read.
 pub fn read_text(path: &Path) -> Result<Option<String>> {
+    read_or_none(path, |kind| {
+        matches!(kind, ErrorKind::NotFound | ErrorKind::InvalidData)
+    })
+}
+
+/// Reads `path`, treating failures whose kind satisfies `is_absent` as `None`.
+fn read_or_none(path: &Path, is_absent: impl FnOnce(ErrorKind) -> bool) -> Result<Option<String>> {
     match read_to_string(path) {
         Ok(contents) => Ok(Some(contents)),
-        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::InvalidData) => {
-            Ok(None)
-        }
+        Err(error) if is_absent(error.kind()) => Ok(None),
         Err(error) => Err(Error::read_file(path, error)),
     }
 }
