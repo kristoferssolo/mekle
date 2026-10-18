@@ -9,7 +9,10 @@ use crate::{
     error::{Error, Result},
     fs, paths,
 };
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{
+    Args, CommandFactory, Parser, Subcommand,
+    builder::{PathBufValueParser, TypedValueParser},
+};
 use serde::Deserialize;
 use std::{
     num::NonZeroUsize,
@@ -75,17 +78,17 @@ enum CliCommand {
     Init { shell: CompletionShell },
     /// Records a visit to a project directory.
     Add {
-        #[arg(help = "Project directory to record")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to record")]
         path: PathBuf,
     },
     /// Holds a project above the frecency ranking.
     Pin {
-        #[arg(help = "Project directory to pin")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to pin")]
         path: PathBuf,
     },
     /// Returns a project to the frecency ranking.
     Unpin {
-        #[arg(help = "Project directory to unpin")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to unpin")]
         path: PathBuf,
     },
 
@@ -96,16 +99,37 @@ enum CliCommand {
     },
 }
 
+/// Parses a path argument, expanding a leading `~`.
+///
+/// Built on [`PathBufValueParser`] so paths need not be UTF-8.
+fn tilde_path() -> impl TypedValueParser<Value = PathBuf> {
+    PathBufValueParser::new().map(|path| paths::expand_tilde(&path, paths::home().as_deref()))
+}
+
 /// What the user asked mekle to do.
 #[derive(Debug)]
 pub enum Invocation {
     Find(Config),
     Completions(CompletionShell),
     Init(CompletionShell),
-    Add { path: PathBuf, config: Config },
-    Pin { path: PathBuf, config: Config },
-    Unpin { path: PathBuf, config: Config },
+    /// Changes how history treats the project `path` belongs to.
+    Project {
+        action: ProjectAction,
+        path: PathBuf,
+        config: Config,
+    },
     History(HistoryCommand),
+}
+
+/// A change to a single project's history entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectAction {
+    /// Records a visit.
+    Add,
+    /// Holds the project above the frecency ranking.
+    Pin,
+    /// Returns the project to the frecency ranking.
+    Unpin,
 }
 
 /// How discovered projects are printed.
@@ -123,26 +147,26 @@ pub enum HistoryCommand {
     List,
     /// Shows one recorded project.
     Show {
-        #[arg(help = "Project directory to inspect")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to inspect")]
         path: PathBuf,
     },
     /// Sets a project's raw score.
     Set {
-        #[arg(help = "Project directory to change")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to change")]
         path: PathBuf,
         #[arg(help = "New raw score")]
         score: f64,
     },
     /// Adds a positive or negative amount to a project's raw score.
     Adjust {
-        #[arg(help = "Project directory to change")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to change")]
         path: PathBuf,
         #[arg(allow_hyphen_values = true, help = "Amount to add to the raw score")]
         delta: f64,
     },
     /// Removes one project from history.
     Remove {
-        #[arg(help = "Project directory to remove")]
+        #[arg(value_parser = tilde_path(), help = "Project directory to remove")]
         path: PathBuf,
     },
     /// Removes projects whose paths no longer exist.
@@ -176,7 +200,6 @@ pub struct Config {
     pub exclude: Vec<String>,
     pub depth: usize,
     pub verbose: bool,
-    #[serde(default)]
     pub max_results: Option<NonZeroUsize>,
     #[serde(skip)]
     pub output: OutputFormat,
@@ -202,31 +225,26 @@ impl Invocation {
         system_config_path: Option<&Path>,
         user_config_path: Option<&Path>,
     ) -> Result<Self> {
-        let home = paths::home();
         let Cli { command, search } = cli;
 
-        match command {
-            Some(CliCommand::Completions { shell }) => Ok(Self::Completions(shell)),
-            Some(CliCommand::Init { shell }) => Ok(Self::Init(shell)),
-            Some(CliCommand::Add { path }) => Ok(Self::Add {
-                path: paths::expand_tilde(&path, home.as_deref()),
-                config: Config::from_sources(search, system_config_path, user_config_path)?,
-            }),
-            Some(CliCommand::Pin { path }) => Ok(Self::Pin {
-                path: paths::expand_tilde(&path, home.as_deref()),
-                config: Config::from_sources(search, system_config_path, user_config_path)?,
-            }),
-            Some(CliCommand::Unpin { path }) => Ok(Self::Unpin {
-                path: paths::expand_tilde(&path, home.as_deref()),
-                config: Config::from_sources(search, system_config_path, user_config_path)?,
-            }),
-            Some(CliCommand::History { command }) => {
-                Ok(Self::History(command.expand_path(home.as_deref())))
-            }
+        let (action, path) = match command {
+            Some(CliCommand::Completions { shell }) => return Ok(Self::Completions(shell)),
+            Some(CliCommand::Init { shell }) => return Ok(Self::Init(shell)),
+            Some(CliCommand::History { command }) => return Ok(Self::History(command)),
             None => {
-                Config::from_sources(search, system_config_path, user_config_path).map(Self::Find)
+                return Config::from_sources(search, system_config_path, user_config_path)
+                    .map(Self::Find);
             }
-        }
+            Some(CliCommand::Add { path }) => (ProjectAction::Add, path),
+            Some(CliCommand::Pin { path }) => (ProjectAction::Pin, path),
+            Some(CliCommand::Unpin { path }) => (ProjectAction::Unpin, path),
+        };
+
+        Ok(Self::Project {
+            action,
+            path,
+            config: Config::from_sources(search, system_config_path, user_config_path)?,
+        })
     }
 }
 
@@ -234,28 +252,6 @@ impl Invocation {
 #[must_use]
 pub fn cli_command() -> clap::Command {
     Cli::command()
-}
-
-impl HistoryCommand {
-    fn expand_path(self, home: Option<&Path>) -> Self {
-        match self {
-            Self::Show { path } => Self::Show {
-                path: paths::expand_tilde(&path, home),
-            },
-            Self::Set { path, score } => Self::Set {
-                path: paths::expand_tilde(&path, home),
-                score,
-            },
-            Self::Adjust { path, delta } => Self::Adjust {
-                path: paths::expand_tilde(&path, home),
-                delta,
-            },
-            Self::Remove { path } => Self::Remove {
-                path: paths::expand_tilde(&path, home),
-            },
-            command @ (Self::List | Self::Prune | Self::Clear) => command,
-        }
-    }
 }
 
 impl Config {
@@ -352,7 +348,8 @@ fn read_config_file(path: &Path) -> Result<Option<FileConfig>> {
 mod tests {
     use super::*;
     use claims::{assert_none, assert_ok, assert_some};
-    use std::fs::write;
+    use rstest::rstest;
+    use std::{ffi::OsString, fs::write, os::unix::ffi::OsStringExt};
     use tempfile::TempDir;
 
     /// Parses `args` and layers it over `path`, the way a run would.
@@ -519,38 +516,49 @@ max_results = 20
         Ok(())
     }
 
-    #[test]
-    fn add_carries_the_search_configuration() -> Result<()> {
-        let cli = Cli::try_parse_from(["mekle", "add", "/projects/one"]).expect("arguments parse");
+    #[rstest]
+    #[case("add", ProjectAction::Add)]
+    #[case("pin", ProjectAction::Pin)]
+    #[case("unpin", ProjectAction::Unpin)]
+    fn project_commands_carry_the_search_configuration(
+        #[case] command: &str,
+        #[case] expected: ProjectAction,
+    ) -> Result<()> {
+        let home = assert_some!(paths::home());
+        let cli = Cli::try_parse_from(["mekle", command, "~/one"]).expect("arguments parse");
 
-        let invocation = Invocation::from_cli(cli, None, None)?;
-
-        match invocation {
-            Invocation::Add { path, config } => {
-                assert_eq!(path, PathBuf::from("/projects/one"));
+        match Invocation::from_cli(cli, None, None)? {
+            Invocation::Project {
+                action,
+                path,
+                config,
+            } => {
+                assert_eq!(action, expected);
+                assert_eq!(path, home.join("one"));
                 assert_eq!(config.depth, 5);
             }
-            other => panic!("expected an add invocation, got {other:?}"),
+            other => panic!("expected a project invocation, got {other:?}"),
         }
         Ok(())
     }
 
     #[test]
-    fn pin_and_unpin_resolve_a_project_the_way_add_does() -> Result<()> {
-        let home = assert_some!(paths::home());
+    fn path_arguments_need_not_be_utf8() {
+        let path = OsString::from_vec(b"/projects/\xff".to_vec());
 
-        for args in [["mekle", "pin", "~/one"], ["mekle", "unpin", "~/one"]] {
-            let cli = Cli::try_parse_from(args).expect("arguments parse");
+        let cli = assert_ok!(Cli::try_parse_from([
+            OsString::from("mekle"),
+            OsString::from("history"),
+            OsString::from("show"),
+            path.clone(),
+        ]));
 
-            match Invocation::from_cli(cli, None, None)? {
-                Invocation::Pin { path, config } | Invocation::Unpin { path, config } => {
-                    assert_eq!(path, home.join("one"));
-                    assert_eq!(config.depth, 5);
-                }
-                other => panic!("expected a pin invocation, got {other:?}"),
-            }
+        match cli.command {
+            Some(CliCommand::History {
+                command: HistoryCommand::Show { path: parsed },
+            }) => assert_eq!(parsed, PathBuf::from(path)),
+            other => panic!("expected history show, got {other:?}"),
         }
-        Ok(())
     }
 
     #[test]

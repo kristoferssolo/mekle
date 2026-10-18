@@ -4,8 +4,8 @@ use color_eyre::{
 };
 use mekle::{
     completions,
-    config::{Config, HistoryCommand, Invocation, cli_command},
-    error::{self, Error},
+    config::{Config, HistoryCommand, Invocation, ProjectAction, cli_command},
+    error::Error,
     finder::{ProjectFinder, root::RootResolver},
     history::{History, HistoryEntry, ScoreChange},
     output::{include_pinned, rank_projects, write_entries, write_projects},
@@ -15,8 +15,8 @@ use std::{
     io::{stderr, stdout},
     path::{Path, PathBuf},
 };
-use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
+use tracing::{Level, info};
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 fn main() -> Result<()> {
     HookBuilder::default()
@@ -34,15 +34,21 @@ fn main() -> Result<()> {
             print!("{}", shell.init());
             Ok(())
         }
-        Invocation::Add { path, config } => add_project(&path, &config),
-        Invocation::Pin { path, config } => change_pin(&path, &config, History::pin),
-        Invocation::Unpin { path, config } => change_pin(&path, &config, History::unpin),
+        Invocation::Project {
+            action,
+            path,
+            config,
+        } => change_project(action, &path, &config),
         Invocation::History(command) => manage_history(command),
     }
 }
 
 fn find_projects(config: Config) -> Result<()> {
-    init_logging(config.verbose).wrap_err("Failed to set up logging")?;
+    init_logging(config.verbose)?;
+
+    // A broken history should fail before the scan, not after it. It is read
+    // again afterwards so a long scan cannot rank with stale scores.
+    open_history()?;
 
     // Ranking needs the complete result set, so the limit is applied last.
     let max_results = config.max_results;
@@ -68,19 +74,26 @@ fn find_projects(config: Config) -> Result<()> {
     Ok(())
 }
 
-fn add_project(path: &Path, config: &Config) -> Result<()> {
-    open_history()?.record(&resolve_project(path, config)?)?;
-    Ok(())
-}
-
-/// Pins or unpins the project `path` belongs to, whichever `change` is.
-fn change_pin(
-    path: &Path,
-    config: &Config,
-    change: fn(&mut History, &Path) -> error::Result<()>,
-) -> Result<()> {
-    let project = resolve_project(path, config)?;
-    change(&mut open_history()?, &project)?;
+/// Applies `action` to the project `path` belongs to.
+///
+/// Errors surface in a fixed order per action: `add` reports an unusable
+/// history before a missing path, while `pin` and `unpin` do the opposite.
+fn change_project(action: ProjectAction, path: &Path, config: &Config) -> Result<()> {
+    init_logging(config.verbose)?;
+    match action {
+        ProjectAction::Add => {
+            let mut history = open_history()?;
+            history.record(&resolve_project(path, config)?)?;
+        }
+        ProjectAction::Pin => {
+            let project = resolve_project(path, config)?;
+            open_history()?.pin(&project)?;
+        }
+        ProjectAction::Unpin => {
+            let project = resolve_project(path, config)?;
+            open_history()?.unpin(&project)?;
+        }
+    }
     Ok(())
 }
 
@@ -91,7 +104,13 @@ fn resolve_project(path: &Path, config: &Config) -> Result<PathBuf> {
         return Err(Error::PathNotFound(path.to_path_buf()).into());
     }
 
-    Ok(RootResolver::from_config(config).resolve_directory(&paths::normalize(path)?)?)
+    let project = RootResolver::from_config(config).resolve_directory(&paths::normalize(path)?)?;
+    info!(
+        "Resolved {} to project {}",
+        path.display(),
+        project.display()
+    );
+    Ok(project)
 }
 
 fn manage_history(command: HistoryCommand) -> Result<()> {
@@ -133,14 +152,19 @@ fn print_entries(entries: impl IntoIterator<Item = HistoryEntry>) -> Result<()> 
     Ok(())
 }
 
+/// Logs to stderr, keeping stdout free for results.
+///
+/// `RUST_LOG` takes precedence when set; otherwise only errors are shown, or
+/// info too with `--verbose`.
 fn init_logging(verbose: bool) -> Result<()> {
     let level = if verbose { Level::INFO } else { Level::ERROR };
+    let filter = EnvFilter::builder()
+        .with_default_directive(level.into())
+        .from_env_lossy();
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
+        .with_env_filter(filter)
         .with_writer(stderr)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)?;
-
-    Ok(())
+    tracing::subscriber::set_global_default(subscriber).wrap_err("Failed to set up logging")
 }
