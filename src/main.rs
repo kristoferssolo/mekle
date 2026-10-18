@@ -44,8 +44,9 @@ fn main() -> Result<()> {
 fn find_projects(config: Config) -> Result<()> {
     init_logging(config.verbose)?;
 
-    // A broken history should fail before the scan, not after it.
-    let history = open_history()?.entries()?;
+    // A broken history should fail before the scan, not after it. It is read
+    // again afterwards so a long scan cannot rank with stale scores.
+    open_history()?;
 
     // Ranking needs the complete result set, so the limit is applied last.
     let max_results = config.max_results;
@@ -54,6 +55,7 @@ fn find_projects(config: Config) -> Result<()> {
         .find_project_details()
         .wrap_err("Failed to find projects")?;
 
+    let history = open_history()?.entries()?;
     include_pinned(&mut projects, &history)?;
     let mut projects = rank_projects(projects, &history);
     if let Some(max) = max_results {
