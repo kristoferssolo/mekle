@@ -16,7 +16,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 fn main() -> Result<()> {
     HookBuilder::default()
@@ -42,7 +42,7 @@ fn main() -> Result<()> {
 }
 
 fn find_projects(config: Config) -> Result<()> {
-    init_logging(config.verbose).wrap_err("Failed to set up logging")?;
+    init_logging(config.verbose)?;
 
     // Ranking needs the complete result set, so the limit is applied last.
     let max_results = config.max_results;
@@ -69,6 +69,7 @@ fn find_projects(config: Config) -> Result<()> {
 }
 
 fn add_project(path: &Path, config: &Config) -> Result<()> {
+    init_logging(config.verbose)?;
     open_history()?.record(&resolve_project(path, config)?)?;
     Ok(())
 }
@@ -79,6 +80,7 @@ fn change_pin(
     config: &Config,
     change: fn(&mut History, &Path) -> error::Result<()>,
 ) -> Result<()> {
+    init_logging(config.verbose)?;
     let project = resolve_project(path, config)?;
     change(&mut open_history()?, &project)?;
     Ok(())
@@ -133,14 +135,19 @@ fn print_entries(entries: impl IntoIterator<Item = HistoryEntry>) -> Result<()> 
     Ok(())
 }
 
+/// Logs to stderr, keeping stdout free for results.
+///
+/// `RUST_LOG` takes precedence when set; otherwise only errors are shown, or
+/// info too with `--verbose`.
 fn init_logging(verbose: bool) -> Result<()> {
     let level = if verbose { Level::INFO } else { Level::ERROR };
+    let filter = EnvFilter::builder()
+        .with_default_directive(level.into())
+        .from_env_lossy();
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
+        .with_env_filter(filter)
         .with_writer(stderr)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)?;
-
-    Ok(())
+    tracing::subscriber::set_global_default(subscriber).wrap_err("Failed to set up logging")
 }

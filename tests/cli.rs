@@ -19,6 +19,7 @@ struct Run {
     config_home: TempDir,
     home: Option<PathBuf>,
     current_dir: Option<PathBuf>,
+    envs: Vec<(OsString, OsString)>,
     args: Vec<OsString>,
 }
 
@@ -28,6 +29,7 @@ impl Run {
             config_home: TempDir::new()?,
             home: None,
             current_dir: None,
+            envs: Vec::new(),
             args: Vec::new(),
         })
     }
@@ -54,12 +56,19 @@ impl Run {
         self
     }
 
+    fn env(mut self, key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) -> Self {
+        self.envs
+            .push((key.as_ref().to_os_string(), value.as_ref().to_os_string()));
+        self
+    }
+
     fn output(&self) -> Result<Output> {
         let mut command = Command::new(BIN);
         command
             .args(&self.args)
             .env("XDG_CONFIG_HOME", self.config_home.path())
-            .env("XDG_DATA_HOME", self.config_home.path());
+            .env("XDG_DATA_HOME", self.config_home.path())
+            .envs(self.envs.iter().cloned());
 
         match &self.home {
             Some(home) => command.env("HOME", home),
@@ -780,6 +789,22 @@ fn verbose_diagnostics_stay_off_stdout() -> Result<()> {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("Searching in"),
         "expected search diagnostics on stderr"
+    );
+    Ok(())
+}
+
+#[test]
+fn rust_log_enables_scan_diagnostics_on_stderr_only() -> Result<()> {
+    let temp = sample_tree()?;
+
+    let quiet = Run::new()?.arg(temp.path());
+    let logged = Run::new()?.arg(temp.path()).env("RUST_LOG", "mekle=debug");
+    let output = logged.output()?;
+
+    assert_eq!(logged.projects()?, quiet.projects()?);
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Scanning"),
+        "expected scan diagnostics on stderr"
     );
     Ok(())
 }
