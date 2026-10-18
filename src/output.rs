@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(projects.len(), 2);
         assert_eq!(projects[0].markers, [".git"]);
         assert_eq!(projects[1].path, outside);
-        assert!(projects[1].markers.is_empty());
+        assert_eq!(projects[1].markers, Vec::<String>::new());
         Ok(())
     }
 
@@ -273,7 +273,7 @@ mod tests {
             &[pinned_entry(Path::new("/definitely/not/here"))],
         )?;
 
-        assert!(projects.is_empty());
+        assert_eq!(projects, Vec::<Project>::new());
         Ok(())
     }
 
