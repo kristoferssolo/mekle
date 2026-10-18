@@ -177,7 +177,7 @@ mod tests {
             &[],
         ));
 
-        assert!(scan.marker_files.is_empty());
-        assert!(scan.git_repos.is_empty());
+        assert_eq!(scan.marker_files, Vec::<PathBuf>::new());
+        assert_eq!(scan.git_repos, Vec::<PathBuf>::new());
     }
 }
