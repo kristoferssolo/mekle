@@ -110,7 +110,7 @@ audit:
 clean:
     cargo clean
 
-# Install development tools used by this Justfile
+# Install the development tools pinned in mise.toml
 [group("maintenance")]
 setup:
     mise install
