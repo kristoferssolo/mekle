@@ -294,3 +294,17 @@ own directory when none exists.
 
 Direct children of a project remain separate results; deeper descendants are
 folded into their ancestor.
+
+## Development
+
+Development tools, including `just`, are pinned in `mise.toml`.
+[Activate mise](https://mise.jdx.dev/getting-started.html#activate-mise) in
+your shell so the pinned tools come first on `PATH`, then install them and run
+the checks:
+
+```sh
+mise install
+just check
+```
+
+Without activating mise, run recipes as `mise exec -- just <recipe>`.
