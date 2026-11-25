@@ -24,7 +24,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Install nextest
-        uses: taiki-e/install-action@nextest
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.11.14
+          install_args: --locked cargo-nextest
       - name: Populate target directory from cache
         uses: Swatinem/rust-cache@v2
       - name: Run tests
