@@ -67,27 +67,10 @@ jobs:
       - uses: actions-rust-lang/audit@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-  publish:
-    name: Publish to crates.io
-    needs:
-      - metadata
-      - audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Publish crate
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_API_TOKEN }}
-        run: cargo publish --locked --package mekle
-  # Archive names and layout match the `[package.metadata.binstall]` templates
-  # in `Cargo.toml`, so `cargo binstall mekle` resolves them directly.
+  # Archive names and layout match `[package.metadata.binstall]` in Cargo.toml
   build-binaries:
     name: Build mekle (${{ matrix.target }})
-    needs:
-      - metadata
-      - audit
+    needs: metadata
     strategy:
       fail-fast: false
       matrix:
@@ -123,7 +106,7 @@ jobs:
           tar -C dist -czf "dist/$archive.tar.gz" "$archive"
           (
               cd dist
-              # macOS runners ship `shasum` rather than `sha256sum`.
+              # macOS runners ship `shasum` rather than `sha256sum`
               if command -v sha256sum >/dev/null; then
                   sha256sum "$archive.tar.gz" >"$archive.tar.gz.sha256"
               else
@@ -138,17 +121,37 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
           if-no-files-found: error
+  publish:
+    name: Publish to crates.io
+    needs:
+      - audit
+      - build-binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --locked --package mekle
   release:
     name: Create GitHub release
     needs:
       - metadata
       - publish
-      - build-binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout repository with full history and tags
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install git-cliff
@@ -158,14 +161,14 @@ jobs:
           install_args: --locked git-cliff
       - name: Generate release notes
         env:
-          TAG: ${{ needs.metadata.outputs.tag }}
           NOTES_PATH: ${{ runner.temp }}/release-notes.md
+          TAG: ${{ needs.metadata.outputs.tag }}
         run: |
           set -euo pipefail
 
-          # A tag push checks out the tag itself; a manual run creates the tag
-          # at this commit when the release is published
+          # A manual run can release a tag that does not exist yet
           if git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+              git checkout --quiet --detach "$TAG"
               git cliff --current --strip all --output "$NOTES_PATH"
           else
               git cliff --unreleased --tag "$TAG" --strip all --output "$NOTES_PATH"
