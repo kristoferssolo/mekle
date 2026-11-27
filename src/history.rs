@@ -451,42 +451,39 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_opens_as_empty_history() -> Result<()> {
+    fn missing_file_opens_as_empty_history() {
         let temp = TempDir::new().expect("create temp dir");
 
-        let history = History::open(temp.path().join("missing.toml"))?;
+        let history = assert_ok!(History::open(temp.path().join("missing.toml")));
 
         assert!(history.projects.is_empty());
-        Ok(())
     }
 
     #[test]
-    fn records_are_persisted() -> Result<()> {
+    fn records_are_persisted() {
         let temp = TempDir::new().expect("create temp dir");
         let database = temp.path().join("mekle/history.toml");
         let project = Path::new("/projects/favorite");
-        let mut history = History::open(&database)?;
+        let mut history = assert_ok!(History::open(&database));
 
         assert_ok!(history.record_at(project, UNIX_EPOCH + NOW));
-        history.save()?;
-        let history = History::open(database)?;
+        assert_ok!(history.save());
+        let history = assert_ok!(History::open(database));
 
         assert_eq!(history.projects.len(), 1);
         assert_eq!(history.projects[0].path, project);
         assert!((history.projects[0].score - 1.0).abs() < f64::EPSILON);
-        Ok(())
     }
 
     #[test]
-    fn repeated_visits_increase_the_score() -> Result<()> {
+    fn repeated_visits_increase_the_score() {
         let temp = TempDir::new().expect("create temp dir");
-        let mut history = History::open(temp.path().join("history.toml"))?;
+        let mut history = assert_ok!(History::open(temp.path().join("history.toml")));
 
         assert_ok!(history.record_at(Path::new("/project"), UNIX_EPOCH + NOW));
         assert_ok!(history.record_at(Path::new("/project"), UNIX_EPOCH + NOW));
 
         assert!((history.projects[0].score - 2.0).abs() < f64::EPSILON);
-        Ok(())
     }
 
     /// The paths `history` reports, in the order it reports them.
@@ -538,34 +535,31 @@ mod tests {
     }
 
     #[test]
-    fn adjusting_below_the_floor_retires_a_project() -> Result<()> {
+    fn adjusting_below_the_floor_retires_a_project() {
         let temp = TempDir::new().expect("create temp dir");
-        let mut history = History::open(temp.path().join("history.toml"))?;
+        let mut history = assert_ok!(History::open(temp.path().join("history.toml")));
         history
             .projects
             .push(usage("/project", 2.0, Duration::ZERO));
-        history.save()?;
+        assert_ok!(history.save());
 
-        history.update(Path::new("/project"), ScoreChange::Adjust(-1.5))?;
+        assert_ok!(history.update(Path::new("/project"), ScoreChange::Adjust(-1.5)));
 
         assert!(history.projects.is_empty());
-        Ok(())
     }
 
     #[rstest]
     #[case::remove(ScoreChange::Remove)]
     #[case::adjust(ScoreChange::Adjust(1.0))]
-    fn updating_an_unknown_project_fails_and_changes_nothing(
-        #[case] change: ScoreChange,
-    ) -> Result<()> {
+    fn updating_an_unknown_project_fails_and_changes_nothing(#[case] change: ScoreChange) {
         let temp = TempDir::new().expect("create temp dir");
         let database = temp.path().join("history.toml");
         let missing = Path::new("/projects/missing");
-        let mut history = History::open(&database)?;
+        let mut history = assert_ok!(History::open(&database));
         history
             .projects
             .push(usage("/projects/known", 2.0, Duration::ZERO));
-        history.save()?;
+        assert_ok!(history.save());
         let saved = std::fs::read_to_string(&database).expect("read history file");
 
         let error = assert_err!(history.update(missing, change));
@@ -576,30 +570,28 @@ mod tests {
             std::fs::read_to_string(&database).expect("read history file"),
             saved
         );
-        Ok(())
     }
 
     #[test]
-    fn setting_a_score_replaces_it_in_place() -> Result<()> {
+    fn setting_a_score_replaces_it_in_place() {
         let temp = TempDir::new().expect("create temp dir");
         let database = temp.path().join("history.toml");
         let project = Path::new("/project");
         let last_accessed = NOW.saturating_sub(Duration::from_hours(3)).as_secs();
-        let mut history = History::open(&database)?;
+        let mut history = assert_ok!(History::open(&database));
         history
             .projects
             .push(pinned("/project", 2.0, Duration::from_hours(3)));
-        history.save()?;
+        assert_ok!(history.save());
 
-        history.update(project, ScoreChange::Set(7.0))?;
-        history.update(project, ScoreChange::Set(4.0))?;
+        assert_ok!(history.update(project, ScoreChange::Set(7.0)));
+        assert_ok!(history.update(project, ScoreChange::Set(4.0)));
 
-        let history = History::open(database)?;
+        let history = assert_ok!(History::open(database));
         assert_eq!(history.projects.len(), 1);
         assert!((history.projects[0].score - 4.0).abs() < f64::EPSILON);
         assert_eq!(history.projects[0].last_accessed, last_accessed);
         assert!(history.projects[0].pinned);
-        Ok(())
     }
 
     #[test]
@@ -629,70 +621,66 @@ mod tests {
     }
 
     #[test]
-    fn pinning_an_unvisited_project_records_it() -> Result<()> {
+    fn pinning_an_unvisited_project_records_it() {
         let temp = TempDir::new().expect("create temp dir");
-        let mut history = History::open(temp.path().join("history.toml"))?;
+        let mut history = assert_ok!(History::open(temp.path().join("history.toml")));
 
-        history.pin(Path::new("/project"))?;
+        assert_ok!(history.pin(Path::new("/project")));
 
         assert_eq!(history.projects.len(), 1);
         assert!(history.projects[0].pinned);
         assert!((history.projects[0].score - MINIMUM_SCORE).abs() < f64::EPSILON);
-        Ok(())
     }
 
     #[test]
-    fn pinning_survives_a_round_trip_and_unpinning() -> Result<()> {
+    fn pinning_survives_a_round_trip_and_unpinning() {
         let temp = TempDir::new().expect("create temp dir");
         let database = temp.path().join("history.toml");
         let project = Path::new("/projects/favourite");
-        let mut history = History::open(&database)?;
+        let mut history = assert_ok!(History::open(&database));
         assert_ok!(history.record_at(project, UNIX_EPOCH + NOW));
-        history.pin(project)?;
+        assert_ok!(history.pin(project));
 
-        let mut history = History::open(&database)?;
+        let mut history = assert_ok!(History::open(&database));
         assert!(history.projects[0].pinned);
         // The score the visit earned is left alone by both commands.
         assert!((history.projects[0].score - 1.0).abs() < f64::EPSILON);
 
-        history.unpin(project)?;
+        assert_ok!(history.unpin(project));
 
-        assert!(!History::open(&database)?.projects[0].pinned);
-        Ok(())
+        assert!(!assert_ok!(History::open(&database)).projects[0].pinned);
     }
 
     #[test]
-    fn unpinning_an_unknown_project_fails() -> Result<()> {
+    fn unpinning_an_unknown_project_fails() {
         let temp = TempDir::new().expect("create temp dir");
-        let mut history = History::open(temp.path().join("history.toml"))?;
+        let mut history = assert_ok!(History::open(temp.path().join("history.toml")));
 
         assert_err!(history.unpin(Path::new("/project")));
-        Ok(())
     }
 
     #[test]
-    fn pruning_keeps_only_projects_that_still_exist() -> Result<()> {
+    fn pruning_keeps_only_projects_that_still_exist() {
         let temp = TempDir::new().expect("create temp dir");
         let present = temp.path().join("present");
         std::fs::create_dir(&present).expect("create project dir");
-        let mut history = History::open(temp.path().join("history.toml"))?;
+        let mut history = assert_ok!(History::open(temp.path().join("history.toml")));
         history
             .projects
             .push(ProjectUsage::new(&present, 1.0, NOW.as_secs()));
         history
             .projects
             .push(usage("/definitely/not/here", 1.0, Duration::ZERO));
-        history.save()?;
+        assert_ok!(history.save());
 
-        history.prune()?;
+        assert_ok!(history.prune());
 
         assert_eq!(history.projects.len(), 1);
         assert_eq!(history.projects[0].path, present);
-        Ok(())
     }
 
     #[test]
-    fn concurrent_records_preserve_every_project() -> Result<()> {
+    fn concurrent_records_preserve_every_project() {
         let temp = TempDir::new().expect("create temp dir");
         let database = temp.path().join("history.toml");
 
@@ -713,8 +701,7 @@ mod tests {
             }
         });
 
-        let history = History::open(database)?;
+        let history = assert_ok!(History::open(database));
         assert_eq!(history.projects.len(), 100);
-        Ok(())
     }
 }
