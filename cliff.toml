@@ -52,4 +52,6 @@ commit_parsers = [
 ]
 # Matches the tags that publish.yml releases
 tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+# Only tags reachable from HEAD bound a release, so tags on other branches are ignored
+use_branch_tags = true
 sort_commits = "oldest"
