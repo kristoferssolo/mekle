@@ -85,7 +85,7 @@ pub fn deep_nesting(root: &Path, levels: usize) -> Result<Vec<PathBuf>> {
 pub fn haystack(root: &Path, count: usize) -> Result<Vec<PathBuf>> {
     let repos = flat_repos(&root.join("repos"), count)?;
 
-    for index in 0..count * NOISE_PER_REPO {
+    for index in 0..count.saturating_mul(NOISE_PER_REPO) {
         let dir = (0..NOISE_DEPTH)
             .fold(root.join(format!("noise/dir-{index:05}")), |dir, level| {
                 dir.join(format!("part-{level}"))

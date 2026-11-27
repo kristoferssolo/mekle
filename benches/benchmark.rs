@@ -1,6 +1,10 @@
 //! Benchmarks for mekle, grouped by the stage of a run they cover.
 //!
 //! Run one stage with `just bench <group>`, for example `just bench ranking`.
+#![expect(
+    clippy::expect_used,
+    reason = "a benchmark cannot run without its setup"
+)]
 
 mod common;
 mod scenarios;

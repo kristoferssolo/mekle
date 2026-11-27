@@ -15,7 +15,7 @@ use crate::{
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::RwLock,
+    sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 /// A `Cargo.toml` declares a workspace by opening a `[workspace]` table.
@@ -42,8 +42,6 @@ const WORKSPACE_RULES: [(&str, ContentTest); 8] = [
     ("nx.json", ContentTest::NonEmpty),
     ("turbo.json", ContentTest::NonEmpty),
 ];
-
-const POISONED: &str = "resolver cache lock poisoned";
 
 #[derive(Debug)]
 pub struct RootResolver {
@@ -72,10 +70,6 @@ impl RootResolver {
     /// # Errors
     ///
     /// Returns an error if a marker or workspace manifest cannot be inspected.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a cache lock is poisoned.
     pub fn resolve_directory(&self, dir: &Path) -> Result<PathBuf> {
         let absolute_dir = paths::absolute(dir)?;
         let mut projects = HashSet::new();
@@ -113,15 +107,11 @@ impl RootResolver {
     /// # Errors
     ///
     /// Returns an error if a workspace manifest cannot be read.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a cache lock is poisoned.
     pub fn resolve(&self, dir: &Path, marker_name: &str) -> Result<PathBuf> {
         let absolute_dir = paths::absolute(dir)?;
         let cache_key = (absolute_dir, MarkerType::from(marker_name));
 
-        if let Some(root) = self.root_cache.read().expect(POISONED).get(&cache_key) {
+        if let Some(root) = read(&self.root_cache).get(&cache_key) {
             return display_resolved_root(dir, root.clone());
         }
 
@@ -136,40 +126,31 @@ impl RootResolver {
             MarkerType::OtherConfig => ascend_to_root(&cache_key.0, |_| Ok(false))?,
         };
 
-        self.root_cache
-            .write()
-            .expect(POISONED)
-            .insert(cache_key, root.clone());
+        write(&self.root_cache).insert(cache_key, root.clone());
 
         display_resolved_root(dir, root)
     }
 
     fn is_workspace_root(&self, dir: &Path) -> Result<bool> {
-        if let Some(&cached) = self.workspace_cache.read().expect(POISONED).get(dir) {
+        if let Some(&cached) = read(&self.workspace_cache).get(dir) {
             return Ok(cached);
         }
 
         let is_root = self.declares_a_workspace(dir)?;
 
-        self.workspace_cache
-            .write()
-            .expect(POISONED)
-            .insert(dir.to_path_buf(), is_root);
+        write(&self.workspace_cache).insert(dir.to_path_buf(), is_root);
 
         Ok(is_root)
     }
 
     fn is_cargo_workspace_root(&self, dir: &Path) -> Result<bool> {
-        if let Some(&cached) = self.cargo_workspace_cache.read().expect(POISONED).get(dir) {
+        if let Some(&cached) = read(&self.cargo_workspace_cache).get(dir) {
             return Ok(cached);
         }
 
         let is_root = CARGO_WORKSPACE.matches_file(&dir.join("Cargo.toml"))?;
 
-        self.cargo_workspace_cache
-            .write()
-            .expect(POISONED)
-            .insert(dir.to_path_buf(), is_root);
+        write(&self.cargo_workspace_cache).insert(dir.to_path_buf(), is_root);
 
         Ok(is_root)
     }
@@ -232,6 +213,17 @@ fn display_resolved_root(input: &Path, root: PathBuf) -> Result<PathBuf> {
 
 /// Keeps relative inputs relative in discovery output, including roots above
 /// the current directory.
+/// Locks a cache for reading. A panic while a cache is locked can only leave
+/// entries that were fully inserted, so a poisoned cache is still valid
+fn read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Locks a cache for writing, recovering from poisoning as [`read`] does
+fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
+}
+
 fn relative_to_current_dir(path: &Path) -> Result<PathBuf> {
     let current_dir = std::env::current_dir().map_err(|source| Error::ResolvePath {
         path: path.to_path_buf(),
@@ -246,12 +238,12 @@ fn relative_to_current_dir(path: &Path) -> Result<PathBuf> {
         .count();
 
     let mut relative = PathBuf::new();
-    for component in &current_components[shared..] {
+    for component in current_components.iter().skip(shared) {
         if matches!(component, std::path::Component::Normal(_)) {
             relative.push("..");
         }
     }
-    for component in &path_components[shared..] {
+    for component in path_components.iter().skip(shared) {
         relative.push(component.as_os_str());
     }
 

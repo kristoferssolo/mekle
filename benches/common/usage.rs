@@ -39,10 +39,6 @@ fn score(index: usize) -> f64 {
     f64::from(u16::try_from(bucket).expect("a remainder below 997 fits in u16")) + 1.0
 }
 
-const fn bucket(index: usize) -> usize {
-    index % AGES.len()
-}
-
 fn now() -> Result<u64> {
     Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
 }
@@ -51,7 +47,7 @@ fn now() -> Result<u64> {
 pub fn history_file(dir: &Path, count: usize) -> Result<PathBuf> {
     let now = now()?;
     let mut contents = String::from("version = 1\n");
-    for index in 0..count {
+    for (index, age) in (0..count).zip(AGES.iter().cycle()) {
         write!(
             contents,
             // Fixture paths never contain a quote or a backslash, so they
@@ -59,7 +55,7 @@ pub fn history_file(dir: &Path, count: usize) -> Result<PathBuf> {
             "\n[[projects]]\npath = \"{}\"\nscore = {:.1}\nlast_accessed = {}\n",
             tracked_path(index).display(),
             score(index),
-            now.saturating_sub(AGES[bucket(index)]),
+            now.saturating_sub(*age),
         )?;
     }
 
@@ -72,16 +68,14 @@ pub fn history_file(dir: &Path, count: usize) -> Result<PathBuf> {
 pub fn entries(count: usize) -> Result<Vec<HistoryEntry>> {
     let now = now()?;
     Ok((0..count)
-        .map(|index| {
-            let age = AGES[bucket(index)];
-            HistoryEntry {
-                path: tracked_path(index),
-                score: score(index),
-                frecency: score(index) * MULTIPLIERS[bucket(index)],
-                last_used: Duration::from_secs(age),
-                last_used_at: now.saturating_sub(age),
-                pinned: false,
-            }
+        .zip(AGES.iter().zip(MULTIPLIERS).cycle())
+        .map(|(index, (&age, multiplier))| HistoryEntry {
+            path: tracked_path(index),
+            score: score(index),
+            frecency: score(index) * multiplier,
+            last_used: Duration::from_secs(age),
+            last_used_at: now.saturating_sub(age),
+            pinned: false,
         })
         .collect())
 }

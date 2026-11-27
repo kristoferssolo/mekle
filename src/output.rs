@@ -182,6 +182,7 @@ fn path_bytes(path: &Path) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use claims::assert_ok;
     use rstest::rstest;
     use std::fs::create_dir;
     use tempfile::TempDir;
@@ -239,14 +240,14 @@ mod tests {
     }
 
     #[test]
-    fn pinned_projects_the_walk_missed_are_included() -> Result<()> {
+    fn pinned_projects_the_walk_missed_are_included() {
         let temp = TempDir::new().expect("create temp dir");
         let outside = temp.path().join("outside");
         create_dir(&outside).expect("create the pinned directory");
-        let mut projects = vec![Project::new(
+        let mut projects = vec![assert_ok!(Project::new(
             temp.path().join("found"),
             vec![".git".to_owned()],
-        )?];
+        ))];
         let history = [
             // Already discovered, so it keeps the markers discovery gave it.
             pinned_entry(&temp.path().join("found")),
@@ -255,26 +256,24 @@ mod tests {
             entry("/tracked", 12.0, false),
         ];
 
-        include_pinned(&mut projects, &history)?;
+        assert_ok!(include_pinned(&mut projects, &history));
 
         assert_eq!(projects.len(), 2);
         assert_eq!(projects[0].markers, [".git"]);
         assert_eq!(projects[1].path, outside);
         assert_eq!(projects[1].markers, Vec::<String>::new());
-        Ok(())
     }
 
     #[test]
-    fn pinned_projects_that_are_gone_are_left_out() -> Result<()> {
+    fn pinned_projects_that_are_gone_are_left_out() {
         let mut projects = Vec::new();
 
-        include_pinned(
+        assert_ok!(include_pinned(
             &mut projects,
             &[pinned_entry(Path::new("/definitely/not/here"))],
-        )?;
+        ));
 
         assert_eq!(projects, Vec::<Project>::new());
-        Ok(())
     }
 
     fn pinned_entry(path: &Path) -> HistoryEntry {

@@ -1,4 +1,8 @@
 #![cfg(unix)]
+#![expect(
+    clippy::panic_in_result_fn,
+    reason = "tests propagate setup failures with ? before asserting"
+)]
 
 mod common;
 

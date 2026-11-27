@@ -105,17 +105,22 @@ update:
 audit:
     cargo audit
 
+# cliff.toml falls back to GITHUB_REPOSITORY for links when the branch has no upstream
 # Regenerate CHANGELOG.md; pass --tag vX.Y.Z to name unreleased changes
 [group("release")]
 changelog *ARGS:
-    git cliff --output CHANGELOG.md {{ ARGS }}
+    origin="$(git remote get-url origin 2>/dev/null || true)"; repo="${origin#*github.com[:/]}"; repo="${repo#443/}"; \
+        GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-${repo%.git}}" git cliff --output CHANGELOG.md {{ ARGS }}
 
 # Remove build artifacts
 [group("maintenance")]
 clean:
     cargo clean
 
-# Install the development tools pinned in mise.toml
+# mise builds cargo tools outside the checkout, where rust-toolchain.toml does not apply,
+# so RUSTUP_TOOLCHAIN passes the repository toolchain to them.
+# Install the Rust toolchain and the tools pinned in mise.toml
 [group("maintenance")]
 setup:
-    mise install
+    rustup toolchain install
+    toolchain="$(rustup show active-toolchain)"; RUSTUP_TOOLCHAIN="${toolchain%% *}" mise install

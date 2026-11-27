@@ -366,8 +366,8 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_used_without_a_config_file() -> Result<()> {
-        let config = config_from(&["mekle"], None)?;
+    fn defaults_are_used_without_a_config_file() {
+        let config = assert_ok!(config_from(&["mekle"], None));
 
         assert_eq!(config.paths, [PathBuf::from(".")]);
         assert_eq!(config.depth, 5);
@@ -381,11 +381,10 @@ mod tests {
         );
         assert_none!(config.max_results);
         assert_eq!(config.output, OutputFormat::Path);
-        Ok(())
     }
 
     #[test]
-    fn file_values_replace_built_in_defaults() -> Result<()> {
+    fn file_values_replace_built_in_defaults() {
         let temp = TempDir::new().expect("create temp dir");
         let path = config_file(
             &temp,
@@ -399,7 +398,7 @@ max_results = 20
 "#,
         );
 
-        let config = config_from(&["mekle"], Some(&path))?;
+        let config = assert_ok!(config_from(&["mekle"], Some(&path)));
 
         assert_eq!(config.paths, [PathBuf::from("/projects")]);
         assert_eq!(config.marker_files, ["project.toml"]);
@@ -407,11 +406,10 @@ max_results = 20
         assert_eq!(config.depth, 12);
         assert!(config.verbose);
         assert_eq!(config.max_results.map(NonZeroUsize::get), Some(20));
-        Ok(())
     }
 
     #[test]
-    fn user_config_overrides_system_config() -> Result<()> {
+    fn user_config_overrides_system_config() {
         let temp = TempDir::new().expect("create temp dir");
         let system = temp.path().join("system.toml");
         let user = temp.path().join("user.toml");
@@ -419,34 +417,36 @@ max_results = 20
         write(&user, "search_dirs = [\"/user\"]\n").expect("write user config");
         let cli = Cli::try_parse_from(["mekle"]).expect("arguments parse");
 
-        let system_only = Config::from_sources(cli.search.clone(), Some(&system), None)?;
+        let system_only = assert_ok!(Config::from_sources(
+            cli.search.clone(),
+            Some(&system),
+            None
+        ));
         assert_eq!(system_only.paths, [PathBuf::from("/system")]);
         assert_eq!(system_only.depth, 8);
 
-        let config = Config::from_sources(cli.search, Some(&system), Some(&user))?;
+        let config = assert_ok!(Config::from_sources(cli.search, Some(&system), Some(&user)));
 
         assert_eq!(config.paths, [PathBuf::from("/user")]);
         assert_eq!(config.depth, 8);
-        Ok(())
     }
 
     #[test]
-    fn command_line_values_override_the_file() -> Result<()> {
+    fn command_line_values_override_the_file() {
         let temp = TempDir::new().expect("create temp dir");
         let path = config_file(
             &temp,
             "search_dirs = [\"/from-file\"]\ndepth = 12\nmax_results = 20\n",
         );
 
-        let config = config_from(
+        let config = assert_ok!(config_from(
             &["mekle", "--depth", "3", "--max-results", "2", "/from-cli"],
             Some(&path),
-        )?;
+        ));
 
         assert_eq!(config.paths, [PathBuf::from("/from-cli")]);
         assert_eq!(config.depth, 3);
         assert_eq!(config.max_results.map(NonZeroUsize::get), Some(2));
-        Ok(())
     }
 
     #[test]
@@ -460,37 +460,35 @@ max_results = 20
     }
 
     #[test]
-    fn configured_search_dirs_are_expanded() -> Result<()> {
+    fn configured_search_dirs_are_expanded() {
         let temp = TempDir::new().expect("create temp dir");
         let path = config_file(&temp, "search_dirs = [\"~/repos\", \"/absolute\"]\n");
         let home = assert_some!(paths::home());
 
-        let config = config_from(&["mekle"], Some(&path))?;
+        let config = assert_ok!(config_from(&["mekle"], Some(&path)));
 
         assert_eq!(
             config.paths,
             [home.join("repos"), PathBuf::from("/absolute")]
         );
-        Ok(())
     }
 
     #[test]
-    fn exclusions_are_loaded_from_the_file() -> Result<()> {
+    fn exclusions_are_loaded_from_the_file() {
         let temp = TempDir::new().expect("create temp dir");
         let path = config_file(
             &temp,
             "exclude = [\"target/\", \"**/vendor/\", \"/archive/\"]\n",
         );
 
-        let config = config_from(&["mekle"], Some(&path))?;
+        let config = assert_ok!(config_from(&["mekle"], Some(&path)));
 
         assert_eq!(config.exclude, ["target/", "**/vendor/", "/archive/"]);
-        Ok(())
     }
 
     #[test]
-    fn repeated_cli_exclusions_are_collected() -> Result<()> {
-        let config = config_from(
+    fn repeated_cli_exclusions_are_collected() {
+        let config = assert_ok!(config_from(
             &[
                 "mekle",
                 "--exclude",
@@ -499,21 +497,19 @@ max_results = 20
                 "node_modules/",
             ],
             None,
-        )?;
+        ));
 
         assert_eq!(config.exclude, ["target/", "node_modules/"]);
-        Ok(())
     }
 
     #[test]
-    fn cli_exclusions_append_to_configured_ones() -> Result<()> {
+    fn cli_exclusions_append_to_configured_ones() {
         let temp = TempDir::new().expect("create temp dir");
         let path = config_file(&temp, "exclude = [\"target/\"]\n");
 
-        let config = config_from(&["mekle", "--exclude", "dist/"], Some(&path))?;
+        let config = assert_ok!(config_from(&["mekle", "--exclude", "dist/"], Some(&path)));
 
         assert_eq!(config.exclude, ["target/", "dist/"]);
-        Ok(())
     }
 
     #[rstest]
@@ -523,11 +519,11 @@ max_results = 20
     fn project_commands_carry_the_search_configuration(
         #[case] command: &str,
         #[case] expected: ProjectAction,
-    ) -> Result<()> {
+    ) {
         let home = assert_some!(paths::home());
         let cli = Cli::try_parse_from(["mekle", command, "~/one"]).expect("arguments parse");
 
-        match Invocation::from_cli(cli, None, None)? {
+        match assert_ok!(Invocation::from_cli(cli, None, None)) {
             Invocation::Project {
                 action,
                 path,
@@ -539,7 +535,6 @@ max_results = 20
             }
             other => panic!("expected a project invocation, got {other:?}"),
         }
-        Ok(())
     }
 
     #[test]
@@ -562,13 +557,12 @@ max_results = 20
     }
 
     #[test]
-    fn a_bare_invocation_searches() -> Result<()> {
+    fn a_bare_invocation_searches() {
         let cli = Cli::try_parse_from(["mekle", "--json"]).expect("arguments parse");
 
-        match Invocation::from_cli(cli, None, None)? {
+        match assert_ok!(Invocation::from_cli(cli, None, None)) {
             Invocation::Find(config) => assert_eq!(config.output, OutputFormat::Json),
             other => panic!("expected a find invocation, got {other:?}"),
         }
-        Ok(())
     }
 }
