@@ -21,6 +21,8 @@ exclude = [
   "docs/",
   "clippy.toml",
   "cliff.toml",
+  "mise.toml",
+  "mise.lock",
   "*.png",
   "*.md",
 ]

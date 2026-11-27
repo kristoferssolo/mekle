@@ -22,10 +22,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
       - name: Install just and nextest
         uses: jdx/mise-action@v5
         with:
@@ -44,12 +42,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.89
+      # rust-toolchain.toml would select the development toolchain, so the
+      # MSRV is passed explicitly
+      - name: Install the minimum supported Rust version
+        run: rustup toolchain install 1.89 --profile minimal
       - name: Populate target directory from cache
         uses: Swatinem/rust-cache@v2
       - name: Check build on the minimum supported Rust version
-        run: cargo check --locked --workspace --all-features
+        run: cargo +1.89 check --locked --workspace --all-features
   audit:
     name: Audit
     runs-on: ubuntu-latest
