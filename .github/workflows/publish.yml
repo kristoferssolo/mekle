@@ -69,7 +69,8 @@ jobs:
       - uses: actions-rust-lang/audit@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-  # Archive names and layout match `[package.metadata.binstall]` in Cargo.toml
+  # Archives follow a cargo-binstall default name, so `cargo binstall mekle`
+  # finds them without `[package.metadata.binstall]`
   build-binaries:
     name: Build mekle (${{ matrix.target }})
     needs: metadata
