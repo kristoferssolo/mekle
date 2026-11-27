@@ -278,13 +278,16 @@ impl History {
             return Err(Error::InvalidScore(delta));
         }
 
-        let project = self
-            .project_mut(path)
+        let (position, project) = self
+            .projects
+            .iter_mut()
+            .enumerate()
+            .find(|(_, project)| project.path == path)
             .ok_or_else(|| Error::HistoryEntryNotFound(path.to_path_buf()))?;
         let score = project.score + delta;
         // Adjusting a project below the floor retires it instead of failing.
         if score < MINIMUM_SCORE {
-            self.projects.retain(|project| project.path != path);
+            self.projects.remove(position);
         } else {
             validate_score(score)?;
             project.score = score;
@@ -546,6 +549,21 @@ mod tests {
         assert_ok!(history.update(Path::new("/project"), ScoreChange::Adjust(-1.5)));
 
         assert!(history.projects.is_empty());
+    }
+
+    #[test]
+    fn adjusting_below_the_floor_retires_only_the_adjusted_entry() {
+        // A hand-edited history file can repeat a path; only the first entry is adjusted
+        let mut history = history_of(vec![
+            usage("/project", 2.0, Duration::ZERO),
+            pinned("/project", 7.0, Duration::ZERO),
+        ]);
+
+        assert_ok!(history.adjust_score(Path::new("/project"), -1.5));
+
+        assert_eq!(history.projects.len(), 1);
+        assert!(history.projects[0].pinned);
+        assert!((history.projects[0].score - 7.0).abs() < f64::EPSILON);
     }
 
     #[rstest]
