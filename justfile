@@ -105,6 +105,11 @@ update:
 audit:
     cargo audit
 
+# Regenerate CHANGELOG.md; pass --tag vX.Y.Z to name unreleased changes
+[group("release")]
+changelog *ARGS:
+    git cliff --output CHANGELOG.md {{ ARGS }}
+
 # Remove build artifacts
 [group("maintenance")]
 clean:

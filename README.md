@@ -308,3 +308,11 @@ just check
 ```
 
 Without activating mise, run recipes as `mise exec -- just <recipe>`.
+
+`CHANGELOG.md` is generated from Conventional Commits with
+[git-cliff](https://git-cliff.org). Before tagging a release, regenerate it with
+the new version:
+
+```sh
+just changelog --tag v1.2.3
+```
