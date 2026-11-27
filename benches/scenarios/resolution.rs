@@ -4,8 +4,8 @@
 //! only ever runs one discovery pass; the warm variant is there to show what
 //! the cache buys within that single pass.
 
-use crate::common::tree;
-use criterion::{BatchSize, BenchmarkId, Criterion, Throughput};
+use crate::common::{elements, tree};
+use criterion::{BatchSize, BenchmarkId, Criterion};
 use mekle::{config::Config, finder::root::RootResolver};
 use std::{hint::black_box, path::PathBuf};
 use tempfile::TempDir;
@@ -25,7 +25,7 @@ pub fn benchmark_root_resolution(c: &mut Criterion) {
         let temp = TempDir::new().expect("create a temporary directory");
         let markers = tree::monorepo(temp.path(), members).expect("build the monorepo");
 
-        group.throughput(Throughput::Elements(members as u64));
+        group.throughput(elements(members));
 
         group.bench_function(BenchmarkId::new("cold_cache", members), |b| {
             b.iter_batched(

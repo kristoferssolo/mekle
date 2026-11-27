@@ -6,8 +6,8 @@
 //! set is one long tie on frecency that leaves the input order intact, while a
 //! tracked set is a full reorder driven by a map lookup per comparison.
 
-use crate::common::usage;
-use criterion::{BatchSize, BenchmarkId, Criterion, Throughput};
+use crate::common::{elements, usage};
+use criterion::{BatchSize, BenchmarkId, Criterion};
 use mekle::{
     config::OutputFormat,
     finder::Project,
@@ -35,7 +35,7 @@ pub fn benchmark_ranking(c: &mut Criterion) {
         let tracked = usage::projects(count);
         let untracked = usage::untracked_projects(count);
 
-        group.throughput(Throughput::Elements(count as u64));
+        group.throughput(elements(count));
 
         // Every project has a distinct frecency, so the sort is a real reorder.
         bench_rank(&mut group, "tracked", count, &tracked, &entries);
@@ -53,11 +53,11 @@ pub fn benchmark_output(c: &mut Criterion) {
         let entries = usage::entries(count).expect("build history entries");
         let results = rank_projects(usage::projects(count), &entries);
 
-        group.throughput(Throughput::Elements(count as u64));
+        group.throughput(elements(count));
         for (name, format) in FORMATS {
             group.bench_function(BenchmarkId::new(name, count), |b| {
                 b.iter_batched(
-                    || Vec::<u8>::with_capacity(count * BYTES_PER_PROJECT),
+                    || Vec::<u8>::with_capacity(count.saturating_mul(BYTES_PER_PROJECT)),
                     |mut sink| {
                         write_projects(&mut sink, &results, format, None)
                             .expect("write the projects");

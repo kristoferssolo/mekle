@@ -11,11 +11,9 @@ use ignore::{DirEntry, WalkBuilder, WalkState};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, PoisonError},
 };
 use tracing::{debug, warn};
-
-const POISONED: &str = "scan lock poisoned";
 
 /// Everything one walk found: repository roots and paths to marker files.
 #[derive(Debug, Default)]
@@ -33,10 +31,6 @@ pub struct DirectoryScan {
 /// # Errors
 ///
 /// Returns an error if an exclusion pattern cannot be parsed or compiled.
-///
-/// # Panics
-///
-/// Panics if a walker thread panicked while holding the result lock.
 pub fn scan_directories(
     dirs: &[PathBuf],
     marker_names: &[String],
@@ -57,7 +51,10 @@ pub fn scan_directories(
         .build_parallel()
         .run(|| Box::new(|entry| visitor.visit(entry)));
 
-    Ok(visitor.scan.into_inner().expect(POISONED))
+    Ok(visitor
+        .scan
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner))
 }
 
 fn build_walker(first: &Path, rest: &[PathBuf], max_depth: usize) -> WalkBuilder {
@@ -152,7 +149,7 @@ impl Visitor<'_> {
     }
 
     fn push(&self, record: impl FnOnce(&mut DirectoryScan)) {
-        record(&mut self.scan.lock().expect(POISONED));
+        record(&mut self.scan.lock().unwrap_or_else(PoisonError::into_inner));
     }
 }
 

@@ -7,11 +7,9 @@
 //! Discovery builds a fresh [`ProjectFinder`] per iteration. A reused finder
 //! keeps its resolver caches warm, which no real invocation ever gets.
 
-use crate::common::tree;
+use crate::common::{elements, tree};
 use color_eyre::eyre::Result;
-use criterion::{
-    BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput, measurement::WallTime,
-};
+use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use mekle::{config::Config, finder::ProjectFinder, scan::scan_directories};
 use std::{
     hint::black_box,
@@ -54,7 +52,7 @@ pub fn benchmark_scan(c: &mut Criterion) {
             build(temp.path(), size).expect("build the tree");
             let dirs = vec![temp.path().to_path_buf()];
 
-            group.throughput(Throughput::Elements(size as u64));
+            group.throughput(elements(size));
             group.bench_function(BenchmarkId::new(shape, size), |b| {
                 b.iter(|| {
                     let scan = scan_directories(&dirs, &marker_files, SEARCH_DEPTH, &[]);
@@ -77,7 +75,7 @@ pub fn benchmark_discovery(c: &mut Criterion) {
             build(temp.path(), size).expect("build the tree");
             let config = config_for(temp.path());
 
-            group.throughput(Throughput::Elements(size as u64));
+            group.throughput(elements(size));
             group.bench_function(BenchmarkId::new(shape, size), |b| {
                 b.iter_batched(
                     || ProjectFinder::new(config.clone()),

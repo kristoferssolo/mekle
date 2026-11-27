@@ -7,8 +7,8 @@
 //! two `fsync` calls in `History::save` are free, so treat that number as a
 //! floor rather than the cost on a real data directory.
 
-use crate::common::usage;
-use criterion::{BatchSize, BenchmarkId, Criterion, Throughput};
+use crate::common::{elements, usage};
+use criterion::{BatchSize, BenchmarkId, Criterion};
 use mekle::history::History;
 use std::{hint::black_box, path::Path, time::Duration};
 use tempfile::TempDir;
@@ -22,7 +22,7 @@ pub fn benchmark_history(c: &mut Criterion) {
         let temp = TempDir::new().expect("create a temporary directory");
         let path = usage::history_file(temp.path(), count).expect("write the history file");
 
-        group.throughput(Throughput::Elements(count as u64));
+        group.throughput(elements(count));
 
         group.bench_function(BenchmarkId::new("open", count), |b| {
             b.iter(|| black_box(open(&path)));
@@ -50,7 +50,7 @@ pub fn benchmark_record(c: &mut Criterion) {
         let path = usage::history_file(temp.path(), count).expect("write the history file");
         let project = usage::tracked_path(0);
 
-        group.throughput(Throughput::Elements(count as u64));
+        group.throughput(elements(count));
         group.bench_function(BenchmarkId::from_parameter(count), |b| {
             b.iter_batched(
                 || open(&path),

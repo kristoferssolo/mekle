@@ -232,8 +232,8 @@ impl History {
     /// A project only reaches history by being pinned when it has never been
     /// visited, so it starts at the score one visit would have earned.
     fn set_pinned(&mut self, path: &Path, pinned: bool) -> Result<()> {
-        match self.position_of(path) {
-            Some(position) => self.projects[position].pinned = pinned,
+        match self.project_mut(path) {
+            Some(project) => project.pinned = pinned,
             None if !pinned => return Err(Error::HistoryEntryNotFound(path.to_path_buf())),
             None => self.projects.push(ProjectUsage {
                 pinned: true,
@@ -249,6 +249,12 @@ impl History {
             .position(|project| project.path == path)
     }
 
+    fn project_mut(&mut self, path: &Path) -> Option<&mut ProjectUsage> {
+        self.projects
+            .iter_mut()
+            .find(|project| project.path == path)
+    }
+
     fn require_position_of(&self, path: &Path) -> Result<usize> {
         self.position_of(path)
             .ok_or_else(|| Error::HistoryEntryNotFound(path.to_path_buf()))
@@ -256,8 +262,8 @@ impl History {
 
     fn set_score(&mut self, path: &Path, score: f64) -> Result<()> {
         validate_score(score)?;
-        match self.position_of(path) {
-            Some(position) => self.projects[position].score = score,
+        match self.project_mut(path) {
+            Some(project) => project.score = score,
             None => self.projects.push(ProjectUsage::new(
                 path,
                 score,
@@ -272,14 +278,16 @@ impl History {
             return Err(Error::InvalidScore(delta));
         }
 
-        let position = self.require_position_of(path)?;
-        let score = self.projects[position].score + delta;
+        let project = self
+            .project_mut(path)
+            .ok_or_else(|| Error::HistoryEntryNotFound(path.to_path_buf()))?;
+        let score = project.score + delta;
         // Adjusting a project below the floor retires it instead of failing.
         if score < MINIMUM_SCORE {
-            self.projects.remove(position);
+            self.projects.retain(|project| project.path != path);
         } else {
             validate_score(score)?;
-            self.projects[position].score = score;
+            project.score = score;
         }
         Ok(())
     }
