@@ -182,9 +182,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # A manual run can release a tag that does not exist yet. An existing tag
-          # is HEAD, as the metadata job checked
-          if git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+          # A manual run can release a tag that does not exist yet. A tag pushed since
+          # the metadata job checked must still be on this commit
+          if tag_commit="$(git rev-parse --quiet --verify "refs/tags/$TAG^{commit}")"; then
+              if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+                  echo "::error::$TAG points to $tag_commit, not $GITHUB_SHA"
+                  exit 1
+              fi
               git cliff --current --strip all --output "$NOTES_PATH"
           else
               git cliff --unreleased --tag "$TAG" --strip all --output "$NOTES_PATH"
