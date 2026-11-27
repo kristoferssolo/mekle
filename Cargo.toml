@@ -20,6 +20,7 @@ exclude = [
   "aur/",
   "docs/",
   "clippy.toml",
+  "cliff.toml",
   "*.png",
   "*.md",
 ]
