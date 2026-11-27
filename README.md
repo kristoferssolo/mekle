@@ -299,11 +299,12 @@ folded into their ancestor.
 
 Development tools, including `just`, are pinned in `mise.toml`.
 [Activate mise](https://mise.jdx.dev/getting-started.html#activate-mise) in
-your shell so the pinned tools come first on `PATH`, then install them and run
-the checks:
+your shell so the pinned tools come first on `PATH`, then install the Rust
+toolchain and the tools, and run the checks:
 
 ```sh
-mise install
+mise install just
+just setup
 just check
 ```
 
